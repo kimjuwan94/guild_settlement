@@ -4,11 +4,17 @@ const db = {
     _defaultData: {
         currentWeekId: null, // "YYYY-MM-DD" of the most recent Wednesday
         guilds: [
-            { id: 'G001', name: '테스트 길드', gmName: '테스트 길드장', username: 'gm_g001', password: '1234', createdAt: '2023-10-01' }
+            { id: 'G_RECOVERED', name: '김해플로체', gmName: '김현제', username: '김현제', password: '4858', createdAt: '2026-05-03', tier: 'Bronze' }
         ],
         members: [
-            { id: 'M001', guildId: 'G001', name: '홍길동', baeminId: 'hong123', coupangPhone: '1234', deliveries: 0, createdAt: '2023-10-01' },
-            { id: 'M002', guildId: 'G001', name: '김철수', baeminId: 'kim456', coupangPhone: '5678', deliveries: 0, createdAt: '2023-10-05' },
+            { id: 'MR01', guildId: 'G_RECOVERED', name: '박준석', baeminId: '', coupangPhone: '9952', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR02', guildId: 'G_RECOVERED', name: '안정호', baeminId: '', coupangPhone: '2744', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR03', guildId: 'G_RECOVERED', name: '왕정호', baeminId: '', coupangPhone: '2744', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR04', guildId: 'G_RECOVERED', name: '김동훈', baeminId: '', coupangPhone: '0027', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR05', guildId: 'G_RECOVERED', name: '유정희', baeminId: '', coupangPhone: '4939', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR06', guildId: 'G_RECOVERED', name: '신성배', baeminId: '', coupangPhone: '5951', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR07', guildId: 'G_RECOVERED', name: '석우찬', baeminId: '', coupangPhone: '9042', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR08', guildId: 'G_RECOVERED', name: '김현제', baeminId: '', coupangPhone: '5951', deliveries: 0, status: 'approved', createdAt: '2026-05-03' }
         ],
         settlements: [],
         globalNotice: "",
@@ -31,18 +37,27 @@ const db = {
             }
 
             if (cloudData) {
-                // Firebase에 데이터가 있으면 클라우드 데이터를 최우선으로 사용
-                this._memoryData = { ...this._defaultData, ...cloudData };
+                // Firebase 데이터와 기본 복구 데이터를 지능적으로 합침 (Merge)
+                const mergedGuilds = [...this._defaultData.guilds];
+                (cloudData.guilds || []).forEach(cg => {
+                    if (!mergedGuilds.find(mg => mg.id === cg.id)) mergedGuilds.push(cg);
+                });
+
+                const mergedMembers = [...this._defaultData.members];
+                (cloudData.members || []).forEach(cm => {
+                    if (!mergedMembers.find(mm => mm.id === cm.id)) mergedMembers.push(cm);
+                });
+
+                this._memoryData = { 
+                    ...this._defaultData, 
+                    ...cloudData, 
+                    guilds: mergedGuilds,
+                    members: mergedMembers
+                };
                 
-                // 만약 로컬에는 있는데 클라우드가 거의 비어있는 초기 상태라면 로컬 데이터를 밀어넣기 (마이그레이션)
-                if (localData && (!cloudData.guilds || cloudData.guilds.length === 0)) {
-                    console.log('Migrating local data to Firebase...');
-                    this._memoryData = { ...this._defaultData, ...localData };
-                    this.saveData(this._memoryData);
-                } else {
-                    // 클라우드 데이터를 로컬에 백업
-                    localStorage.setItem(this._key, JSON.stringify(this._memoryData));
-                }
+                // 최신 합본을 로컬과 서버에 다시 백업
+                localStorage.setItem(this._key, JSON.stringify(this._memoryData));
+                this.saveData(this._memoryData);
             } else {
                 // Firebase가 텅 비어있음 (최초 생성)
                 if (localData) {
