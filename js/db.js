@@ -44,12 +44,17 @@ const db = {
             const sourceData = cloudData || localData || this._defaultData;
             finalData = { ...finalData, ...sourceData };
 
-            // 길드 병합
             const allGuilds = [...this._defaultData.guilds];
             [cloudData, localData].forEach(d => {
                 if (d && d.guilds) {
                     d.guilds.forEach(g => {
-                        if (!allGuilds.find(ag => ag.id === g.id)) allGuilds.push(g);
+                        const existing = allGuilds.find(ag => ag.id === g.id);
+                        if (!existing) {
+                            allGuilds.push(g);
+                        } else {
+                            // 기존의 강제 고정 로직 삭제
+                            if (g.tier) existing.tier = g.tier;
+                        }
                     });
                 }
             });
@@ -529,6 +534,14 @@ const db = {
 
         this.saveData(data);
         return true;
+    },
+
+    getEffectiveTier(guildId) {
+        const count = this.getHeadcountForGuild(guildId);
+        if (count >= 20) return 'Gold';
+        if (count >= 15) return 'Silver';
+        if (count >= 10) return 'Bronze';
+        return 'None';
     },
 
     // --- Tier Upgrade System ---

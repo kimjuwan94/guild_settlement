@@ -9,6 +9,14 @@ const SettlementEngine = {
         ]
     },
 
+    // UI에서 쉽게 참조하기 위한 맵
+    Tiers: {
+        'Gold': { limit: 20, min: 20 },
+        'Silver': { limit: 15, min: 15 },
+        'Bronze': { limit: 10, min: 10 },
+        'None': { limit: 10, min: 0 }
+    },
+
     /**
      * Determine Tier and calculate settlement
      * @param {number} memberCount - Current active members
