@@ -69,9 +69,11 @@ const ExcelParser = {
                         const deliveryCount = 1;
 
                         if (platform === 'baemin') {
-                            // ✅ 배달상태가 '완료'인 건만 집계 (취소/반려 제외)
+                            // ✅ 취소/반려 건만 제외 (완료 표현이 다양할 수 있으므로 exclusion 방식 사용)
                             const status = this._findValue(row, ['배달상태']);
-                            if (status && status.toString().trim() !== '완료') return;
+                            const statusStr = status.toString().trim();
+                            const excludedStatuses = ['취소', '반려', '취소완료', '배달취소', 'cancel', 'cancelled', 'rejected'];
+                            if (statusStr && excludedStatuses.some(s => statusStr.toLowerCase().includes(s))) return;
 
                             // 라이더ID, User ID 모두 탐색
                             const id = this._findValue(row, ['라이더id', 'userid', '아이디', '배민아이디', '라이더계정', '이메일']);
@@ -81,24 +83,25 @@ const ExcelParser = {
                             const cleanExcelName = name.toString().trim().replace(/\s/g, '');
 
                             const member = activeMembers.find(m => {
-                                if (m.status !== 'approved') return false;
+                                // status가 'approved'이거나 아예 없는 경우(레거시) 모두 허용
+                                if (m.status && m.status !== 'approved') return false;
 
                                 const dbNames = this._parseCommaString(m.name);
                                 const dbBaeminIds = this._parseCommaString(m.baeminId);
                                 
-                                // ID 우선 매칭 (라이더ID 또는 User ID)
-                                if (cleanExcelId && dbBaeminIds.some(dbId => dbId.toLowerCase() === cleanExcelId.toLowerCase())) return true;
-                                // ID 없으면 이름으로 매칭
-                                if (!cleanExcelId && cleanExcelName && dbNames.includes(cleanExcelName)) return true;
+                                // ID 우선 매칭
+                                const idMatch = cleanExcelId && dbBaeminIds.some(dbId => dbId.toLowerCase() === cleanExcelId.toLowerCase());
+                                // 이름 매칭
+                                const nameMatch = !cleanExcelId && cleanExcelName && dbNames.includes(cleanExcelName);
                                 
-                                return false;
+                                return idMatch || nameMatch;
                             });
 
                             if (member) {
                                 matchedDeliveries += deliveryCount;
                                 memberDeliveries[member.id] = (memberDeliveries[member.id] || 0) + deliveryCount;
                             } else {
-                                // 배달상태가 완료인데 매칭 실패한 경우만 기록
+                                console.log(`[Baemin Match Fail] Name: ${name}, ID: ${id}`);
                                 if (name || id) unmatchedRecords.push({ name, identifier: id, type: 'baemin' });
                             }
 
@@ -124,7 +127,8 @@ const ExcelParser = {
                             const cleanExcelName = name.toString().replace(/\s/g, '');
 
                             const member = activeMembers.find(m => {
-                                if (m.status !== 'approved') return false;
+                                // status가 'approved'이거나 아예 없는 경우 허용
+                                if (m.status && m.status !== 'approved') return false;
 
                                 const dbNames = this._parseCommaString(m.name);
                                 const dbCoupangPhones = this._parseCommaString(m.coupangPhone);
@@ -132,8 +136,6 @@ const ExcelParser = {
                                 const isNameMatch = dbNames.includes(cleanExcelName);
                                 const isPhoneMatch = phoneLast4 ? dbCoupangPhones.includes(phoneLast4) : false;
                                 
-                                // ✅ 전화번호가 엑셀에 있으면 이름+전화 모두 일치해야 매칭
-                                // ✅ 전화번호가 엑셀에 없으면 이름만으로 매칭 (쿠팡 오더별 상세내역 형식)
                                 if (phoneLast4) {
                                     return isNameMatch && isPhoneMatch;
                                 } else {
@@ -145,6 +147,7 @@ const ExcelParser = {
                                 matchedDeliveries += deliveryCount;
                                 memberDeliveries[member.id] = (memberDeliveries[member.id] || 0) + deliveryCount;
                             } else {
+                                console.log(`[Coupang Match Fail] Name: ${name}, PhoneLast4: ${phoneLast4}`);
                                 if (cleanExcelName) unmatchedRecords.push({ name: rawName, identifier: phoneLast4 || '번호없음', type: 'coupang' });
                             }
                         }
