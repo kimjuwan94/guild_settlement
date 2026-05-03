@@ -453,7 +453,8 @@ const db = {
                 recognizedDeliveries: result.recognizedDeliveries,
                 chunks: result.chunks,
                 totalAmount: result.totalAmount,
-                isPaid: false
+                isPaid: false,
+                memberStats: approvedMembers.map(m => ({ id: m.id, name: m.name, deliveries: m.deliveries || 0 }))
             };
             
             data.settlements.push(record);
@@ -490,13 +491,44 @@ const db = {
         if (s) {
             s.totalDeliveries = newDeliveries;
             s.totalAmount = newAmount;
-            // Recalculate chunks based on new deliveries?
-            // Since this is a manual override, we might just keep the chunks as is, or recalculate tier
-            // For simplicity in manual override, we just update the totals.
             this.saveData(data);
             return true;
         }
         return false;
+    },
+
+    // 마감된 정산서에 엑셀 데이터를 소급 합산하는 핵심 함수
+    addDataToSettlement(settlementId, memberDeliveriesMap, settlementEngine) {
+        const data = this.getData();
+        const s = data.settlements.find(x => x.id === settlementId);
+        if (!s) return false;
+
+        if (!s.memberStats) s.memberStats = [];
+
+        // 1. 개별 멤버 실적 합산
+        for (const [mId, count] of Object.entries(memberDeliveriesMap)) {
+            let stat = s.memberStats.find(ms => ms.id === mId);
+            if (stat) {
+                stat.deliveries += count;
+            } else {
+                // 해당 주차에 없던 멤버가 나중에 추가되어 업로드된 경우
+                const member = data.members.find(m => m.id === mId);
+                s.memberStats.push({ id: mId, name: member ? member.name : 'Unknown', deliveries: count });
+            }
+        }
+
+        // 2. 길드 전체 실적 재계산
+        s.totalDeliveries = s.memberStats.reduce((sum, ms) => sum + ms.deliveries, 0);
+        
+        // 3. 정산 엔진으로 금액 재산출
+        const result = settlementEngine.calculateSettlement(s.memberCount, s.totalDeliveries);
+        s.tier = result.tier;
+        s.recognizedDeliveries = result.recognizedDeliveries;
+        s.chunks = result.chunks;
+        s.totalAmount = result.totalAmount;
+
+        this.saveData(data);
+        return true;
     },
 
     // --- Tier Upgrade System ---

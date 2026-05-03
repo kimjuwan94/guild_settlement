@@ -602,10 +602,29 @@ const app = {
                     <div class="ml-3">
                         <h3 class="text-sm font-bold text-blue-800">전체 길드 일괄 합산 (Admin 전용)</h3>
                         <p class="mt-1 text-sm text-blue-700 leading-relaxed">
-                            여러 엑셀 파일을 선택하여 업로드하면 <b>전체 마스터 길드원 DB</b>를 검색하여 각 길드장의 현황판에 배달 실적이 계속 누적 합산(+)됩니다.
-                            <br><span class="text-xs opacity-75">※ 매주 수요일 자정을 기점으로 시스템 접속 시 자동으로 이전 데이터가 마감 처리되고 초기화됩니다.</span>
+                            여러 엑셀 파일을 선택하여 업로드하면 <b>전체 마스터 길드원 DB</b>를 검색하여 실적이 누적 합산(+)됩니다.
+                            <br><span class="text-xs opacity-75">※ 수요일에 지난주 화요일 정산서가 나올 경우, 아래 옵션에서 '지난 정산 주차'를 선택해 소급 적용할 수 있습니다.</span>
                         </p>
                     </div>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 rounded-xl border border-blue-100 mb-8 shadow-sm">
+                <h4 class="text-sm font-bold text-gray-700 mb-4 flex items-center">
+                    <i data-lucide="calendar" class="w-4 h-4 mr-2 text-blue-600"></i> 실적 반영 대상 주차 선택
+                </h4>
+                <div class="flex flex-col md:flex-row gap-6">
+                    <label class="flex items-center cursor-pointer group">
+                        <input type="radio" name="target-period" value="current" checked class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" onchange="document.getElementById('past-settlement-select').disabled = true">
+                        <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-blue-600">현재 진행 중인 주차 (${db.getCurrentWeekName()})</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer group">
+                        <input type="radio" name="target-period" value="past" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" onchange="document.getElementById('past-settlement-select').disabled = false">
+                        <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-blue-600">이미 마감된 정산 주차 소급 적용</span>
+                        <select id="past-settlement-select" disabled class="ml-3 px-3 py-1 border border-gray-300 rounded text-xs focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400">
+                            ${[...new Set(db.getAllSettlements().map(s => s.weekName))].reverse().map(w => `<option value="${w}">${w}</option>`).join('')}
+                        </select>
+                    </label>
                 </div>
             </div>
 
@@ -1344,8 +1363,39 @@ const app = {
         try {
             const result = await ExcelParser.parseMultipleFiles(files, platform, allActiveMembers);
             
-            for (const [memberId, count] of Object.entries(result.memberDeliveries)) {
-                db.addDeliveriesToMember(memberId, count);
+            // Determine target: current or past
+            const targetPeriod = document.querySelector('input[name="target-period"]:checked').value;
+            const pastWeekName = document.getElementById('past-settlement-select').value;
+
+            if (targetPeriod === 'current') {
+                // ADD TO CURRENT COUNTERS
+                for (const [memberId, count] of Object.entries(result.memberDeliveries)) {
+                    db.addDeliveriesToMember(memberId, count);
+                }
+            } else {
+                // UPDATE FINALIZED SETTLEMENTS
+                // Since an excel might have members from multiple guilds, we need to split result.memberDeliveries by guild
+                const guilds = db.getGuilds();
+                const members = db.getMembers();
+                const settlements = db.getAllSettlements().filter(s => s.weekName === pastWeekName);
+
+                guilds.forEach(guild => {
+                    const targetSettlement = settlements.find(s => s.guildId === guild.id);
+                    if (targetSettlement) {
+                        // Extract only members belonging to this guild from the parsing result
+                        const guildMemberDeliveries = {};
+                        for (const [mId, count] of Object.entries(result.memberDeliveries)) {
+                            const m = members.find(x => x.id === mId);
+                            if (m && m.guildId === guild.id) {
+                                guildMemberDeliveries[mId] = count;
+                            }
+                        }
+                        
+                        if (Object.keys(guildMemberDeliveries).length > 0) {
+                            db.addDataToSettlement(targetSettlement.id, guildMemberDeliveries, SettlementEngine);
+                        }
+                    }
+                });
             }
 
             let unmatchedHtml = '';
