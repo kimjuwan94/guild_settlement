@@ -4,7 +4,7 @@ const db = {
     _defaultData: {
         currentWeekId: null, // "YYYY-MM-DD" of the most recent Wednesday
         guilds: [
-            { id: 'G_RECOVERED', name: '김해플로체', gmName: '김현제', username: '김현제', password: '4858', createdAt: '2026-05-03', tier: 'Gold' }
+            { id: 'G_RECOVERED', name: '김해플로체', gmName: '김현제', username: '김현제', password: '4858', createdAt: '2026-05-03', tier: 'Bronze' }
         ],
         members: [
             { id: 'MR01', guildId: 'G_RECOVERED', name: '안재철', baeminId: 'qpfwpqnq', coupangPhone: '4774', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
