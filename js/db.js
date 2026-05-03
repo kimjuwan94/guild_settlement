@@ -74,8 +74,14 @@ const db = {
                         if (!existing) {
                             allMembers.push(m);
                         } else {
+                            // 사용자가 등록한 정보가 있다면 무조건 최우선 반영하여 보존
+                            if (m.baeminId !== undefined) existing.baeminId = m.baeminId;
+                            if (m.coupangPhone !== undefined) existing.coupangPhone = m.coupangPhone;
+                            if (m.memo !== undefined) existing.memo = m.memo;
+                            
+                            // 실적은 항상 최신/최고값 유지
                             existing.deliveries = Math.max(existing.deliveries || 0, m.deliveries || 0);
-                            if (m.tier) existing.tier = m.tier; // 등급 정보 보존
+                            if (m.tier) existing.tier = m.tier; 
                         }
                     });
                 }
