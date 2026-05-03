@@ -377,6 +377,32 @@ const app = {
                 </h3>
                 ${historyRows}
             </div>
+        `;
+        lucide.createIcons();
+    },
+
+    renderMembers(container) {
+        if (this.state.currentUser.role === 'admin') return;
+        const guildId = this.state.currentUser.id;
+        const members = db.getMembers(guildId);
+        
+        const getStatusBadge = (status) => {
+            if(status === 'pending') return '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 ml-2">승인 대기중</span>';
+            if(status === 'rejected') return '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 ml-2">반려됨</span>';
+            return '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 ml-2">승인 완료</span>';
+        };
+
+        let rows = members.map(m => `
+            <tr class="border-b border-gray-100 hover:bg-gray-50">
+                <td class="py-3 px-4 text-sm text-gray-700 font-semibold">
+                    ${m.name}
+                    ${getStatusBadge(m.status)}
+                    ${m.memo ? `<br><span class="text-xs text-gray-400 font-normal truncate max-w-[100px] inline-block" title="${m.memo}">📝 ${m.memo}</span>` : ''}
+                </td>
+                <td class="py-3 px-4 text-sm text-gray-700 font-mono">${m.baeminId || '-'}</td>
+                <td class="py-3 px-4 text-sm text-gray-700 font-mono">${m.coupangPhone || '-'}</td>
+                <td class="py-3 px-4 text-sm font-bold text-blue-600">${(m.deliveries || 0).toLocaleString()}건</td>
+                <td class="py-3 px-4 text-sm text-right">
                     <button type="button" onclick="app.deleteMember('${m.id}')" class="text-red-500 hover:text-red-700 text-xs font-semibold px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors">삭제</button>
                 </td>
             </tr>
