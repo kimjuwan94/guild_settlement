@@ -86,22 +86,12 @@ const db = {
                 this.saveData(this._memoryData);
             }
         } catch (e) {
-                // Firebase가 텅 비어있음 (최초 생성)
-                if (localData) {
-                    console.log('Migrating local data to empty Firebase...');
-                    this._memoryData = { ...this._defaultData, ...localData };
-                } else {
-                    this._memoryData = { ...this._defaultData };
-                }
-                this.saveData(this._memoryData);
-            }
-        } catch (e) {
-            console.error('Firebase load failed, falling back to local storage:', e);
-            const localData = localStorage.getItem(this._key);
-            if (localData) {
-                this._memoryData = { ...this._defaultData, ...JSON.parse(localData) };
+            console.error('Data load failed, falling back to local storage:', e);
+            const localDataStr = localStorage.getItem(this._key);
+            if (localDataStr) {
+                this._memoryData = { ...this._defaultData, ...JSON.parse(localDataStr) };
             } else {
-                this._memoryData = this._defaultData;
+                this._memoryData = { ...this._defaultData };
             }
         }
     },
