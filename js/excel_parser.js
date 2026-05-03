@@ -69,32 +69,32 @@ const ExcelParser = {
                         const deliveryCount = 1;
 
                         if (platform === 'baemin') {
-                            // ✅ 취소/반려 건만 제외 (완료 표현이 다양할 수 있으므로 exclusion 방식 사용)
+                            // ✅ 취소/반려 건만 제외
                             const status = this._findValue(row, ['배달상태']);
                             const statusStr = status.toString().trim();
                             const excludedStatuses = ['취소', '반려', '취소완료', '배달취소', 'cancel', 'cancelled', 'rejected'];
                             if (statusStr && excludedStatuses.some(s => statusStr.toLowerCase().includes(s))) return;
 
                             // 라이더ID, User ID 모두 탐색
-                            const id = this._findValue(row, ['라이더id', 'userid', '아이디', '배민아이디', '라이더계정', '이메일']);
+                            const id = this._findValue(row, ['라이더id', 'userid', 'user id', '아이디', '배민아이디', '라이더계정', '이메일']);
                             const name = this._findValue(row, ['라이더명', '이름', '기사명', '성명', '라이더이름']);
                             
                             const cleanExcelId = id.toString().trim();
                             const cleanExcelName = name.toString().trim().replace(/\s/g, '');
 
                             const member = activeMembers.find(m => {
-                                // status가 'approved'이거나 아예 없는 경우(레거시) 모두 허용
                                 if (m.status && m.status !== 'approved') return false;
 
                                 const dbNames = this._parseCommaString(m.name);
                                 const dbBaeminIds = this._parseCommaString(m.baeminId);
                                 
-                                // ID 우선 매칭
-                                const idMatch = cleanExcelId && dbBaeminIds.some(dbId => dbId.toLowerCase() === cleanExcelId.toLowerCase());
-                                // 이름 매칭
-                                const nameMatch = !cleanExcelId && cleanExcelName && dbNames.includes(cleanExcelName);
-                                
-                                return idMatch || nameMatch;
+                                // 1순위: ID 매칭
+                                const isIdMatch = cleanExcelId && dbBaeminIds.some(dbId => dbId.toLowerCase() === cleanExcelId.toLowerCase());
+                                if (isIdMatch) return true;
+
+                                // 2순위: ID가 다르더라도 이름이 일치하면 매칭 (숫자ID vs 문자ID 케이스 대응)
+                                const isNameMatch = cleanExcelName && dbNames.includes(cleanExcelName);
+                                return isNameMatch;
                             });
 
                             if (member) {
