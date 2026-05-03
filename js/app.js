@@ -2,6 +2,7 @@ const app = {
     state: {
         currentUser: null, // { role: 'admin'|'gm', id: string, guild?: object }
         currentView: 'dashboard-gm',
+        sidebarOpen: false
     },
 
     async init() {
@@ -24,6 +25,23 @@ const app = {
             this.navigate(this.state.currentUser.role === 'admin' ? 'admin-overview' : 'dashboard-gm');
         } else {
             document.getElementById('login-screen').classList.remove('hidden');
+        }
+
+        // Initialize icons
+        lucide.createIcons();
+    },
+
+    toggleSidebar() {
+        this.state.sidebarOpen = !this.state.sidebarOpen;
+        const sidebar = document.getElementById('main-sidebar');
+        const backdrop = document.getElementById('mobile-sidebar-backdrop');
+        
+        if (this.state.sidebarOpen) {
+            sidebar.classList.remove('-translate-x-full');
+            backdrop.classList.remove('hidden');
+        } else {
+            sidebar.classList.add('-translate-x-full');
+            backdrop.classList.add('hidden');
         }
     },
 
@@ -99,6 +117,15 @@ const app = {
     navigate(view) {
         this.state.currentView = view;
         
+        // Close sidebar on mobile
+        const sidebar = document.getElementById('main-sidebar');
+        const backdrop = document.getElementById('mobile-sidebar-backdrop');
+        if (this.state.sidebarOpen) {
+            this.state.sidebarOpen = false;
+            sidebar.classList.add('-translate-x-full');
+            backdrop.classList.add('hidden');
+        }
+
         document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('nav-active'));
         const activeNav = document.getElementById(`nav-${view}`);
         if(activeNav) activeNav.classList.add('nav-active');
@@ -404,34 +431,31 @@ const app = {
 
         container.innerHTML = `
             <div class="glass-panel rounded-xl border border-gray-100 p-6">
-                <div class="flex justify-between items-center mb-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                     <h3 class="text-lg font-semibold text-gray-800">이번 주 소속 길드원 누적 실적</h3>
-                    <button onclick="document.getElementById('add-modal').classList.remove('hidden')" class="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm flex items-center">
-                        <i data-lucide="plus" class="w-4 h-4 mr-2"></i>신규 등록
+                    <button onclick="app.showAddMemberModal()" class="inline-flex items-center justify-center px-4 py-2 bg-primary-600 text-white text-sm font-bold rounded-lg hover:bg-primary-700 transition-colors shadow-sm">
+                        <i data-lucide="plus" class="w-4 h-4 mr-2"></i> 길드원 직접 추가
                     </button>
                 </div>
 
-                <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6 text-sm text-blue-700">
-                    <p class="font-bold flex items-center mb-1"><i data-lucide="info" class="w-4 h-4 mr-1"></i> 길드원 등록 안내</p>
-                    <p>신규로 등록한 길드원은 <b>[승인 대기중]</b> 상태가 되며, 본사 최고 관리자의 <b>최종 승인 이후에 정식 인원수 및 실적 합산</b>에 반영됩니다. 등록 후 본사에 승인 요청을 해주세요.</p>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead>
-                            <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
-                                <th class="py-3 px-4 font-semibold rounded-tl-lg">사번</th>
-                                <th class="py-3 px-4 font-semibold">이름</th>
-                                <th class="py-3 px-4 font-semibold">배민 ID</th>
-                                <th class="py-3 px-4 font-semibold">쿠팡 뒷자리</th>
-                                <th class="py-3 px-4 font-semibold text-blue-700">이번 주 누적 배달건수</th>
-                                <th class="py-3 px-4 font-semibold rounded-tr-lg text-right">관리</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rows.length > 0 ? rows : `<tr><td colspan="6" class="text-center py-8 text-gray-400">등록된 길드원이 없습니다.</td></tr>`}
-                        </tbody>
-                    </table>
+                <div class="glass-panel rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                    <th class="py-3 px-4 font-semibold rounded-tl-lg">사번</th>
+                                    <th class="py-3 px-4 font-semibold">이름</th>
+                                    <th class="py-3 px-4 font-semibold">배민 ID</th>
+                                    <th class="py-3 px-4 font-semibold">쿠팡 뒷자리</th>
+                                    <th class="py-3 px-4 font-semibold text-blue-700">이번 주 누적 배달건수</th>
+                                    <th class="py-3 px-4 font-semibold rounded-tr-lg text-right">관리</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows.length > 0 ? rows : `<tr><td colspan="6" class="text-center py-8 text-gray-400">등록된 길드원이 없습니다.</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -471,28 +495,6 @@ const app = {
     renderUpload(container) {
         if (this.state.currentUser.role !== 'admin') return;
         container.innerHTML = `
-            <div class="max-w-3xl mx-auto space-y-6">
-                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start">
-                    <i data-lucide="info" class="w-5 h-5 text-blue-500 mr-3 mt-0.5 shrink-0"></i>
-                    <p class="text-sm text-blue-800 leading-relaxed">
-                        <strong>전체 길드 일괄 합산 (Admin 전용)</strong><br/>
-                        여러 엑셀 파일을 선택하여 업로드하면 <b>전체 마스터 길드원 DB</b>를 검색하여 각 길드장의 현황판에 배달 실적이 계속 누적 합산(+)됩니다.<br/>
-                        <span class="text-xs text-blue-600 font-semibold mt-1 inline-block">※ 매주 수요일 자정을 기점으로 시스템 접속 시 자동으로 이전 데이터가 마감 처리되고 초기화됩니다.</span>
-                    </p>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="glass-panel p-6 rounded-xl border border-gray-100 hover:border-primary-300 transition-colors">
-                        <div class="flex items-center mb-4">
-                            <div class="w-10 h-10 rounded-full bg-[#2ac1bc] flex items-center justify-center text-white font-bold mr-3">배민</div>
-                            <h3 class="font-semibold text-gray-800">배달의민족 엑셀 업로드</h3>
-                        </div>
-                        <input type="file" id="file-baemin" accept=".xlsx,.xls,.csv" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 mb-4 cursor-pointer"/>
-                        <button onclick="app.processUpload('baemin')" class="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors">파일 일괄 파싱 및 누적</button>
-                    </div>
-
-                    <div class="glass-panel p-6 rounded-xl border border-gray-100 hover:border-primary-300 transition-colors">
-                        <div class="flex items-center mb-4">
                             <div class="w-10 h-10 rounded-full bg-[#ff3232] flex items-center justify-center text-white font-bold mr-3">쿠팡</div>
                             <h3 class="font-semibold text-gray-800">쿠팡이츠 엑셀 업로드</h3>
                         </div>
