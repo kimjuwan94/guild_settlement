@@ -523,14 +523,6 @@ const app = {
 
             <div id="upload-result" class="hidden"></div>
         `;
-                        <input type="file" id="file-coupang" accept=".xlsx,.xls,.csv" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 mb-4 cursor-pointer"/>
-                        <button onclick="app.processUpload('coupang')" class="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors">파일 일괄 파싱 및 누적</button>
-                    </div>
-                </div>
-
-                <div id="upload-result" class="hidden mt-6"></div>
-            </div>
-        `;
         lucide.createIcons();
     },
 
