@@ -70,18 +70,18 @@ const db = {
                             return; 
                         }
 
-                        const existing = allMembers.find(am => am.id === m.id);
+                        // 이름 또는 ID로 기존 멤버 찾기 (12인 명단 복구를 위해 이름 매칭 우선)
+                        const existing = allMembers.find(am => am.name === m.name || am.id === m.id);
                         if (!existing) {
                             allMembers.push(m);
                         } else {
-                            // 사용자가 등록한 정보가 있다면 무조건 최우선 반영하여 보존
-                            if (m.baeminId !== undefined) existing.baeminId = m.baeminId;
-                            if (m.coupangPhone !== undefined) existing.coupangPhone = m.coupangPhone;
-                            if (m.memo !== undefined) existing.memo = m.memo;
+                            // 서버/로컬에 정보가 있다면 무조건 12인 명단의 빈칸을 채움
+                            if (m.baeminId) existing.baeminId = m.baeminId;
+                            if (m.coupangPhone) existing.coupangPhone = m.coupangPhone;
+                            if (m.memo) existing.memo = m.memo;
                             
                             // 실적은 항상 최신/최고값 유지
                             existing.deliveries = Math.max(existing.deliveries || 0, m.deliveries || 0);
-                            if (m.tier) existing.tier = m.tier; 
                         }
                     });
                 }
