@@ -214,9 +214,30 @@ const app = {
 
         container.innerHTML = `
             ${noticeHtml}
-                        <span class="font-bold text-xs md:text-sm">현재 예상 등급</span>
+            <div id="upgrade-area" class="mb-6"></div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-8">
+                <div class="glass-panel p-5 md:p-6 rounded-xl border border-gray-100">
+                    <div class="flex items-center text-gray-500 mb-2">
+                        <i data-lucide="users" class="w-4 h-4 md:w-5 md:h-5 mr-2 text-blue-500"></i>
+                        <span class="font-bold text-xs md:text-sm">현재 소속 인원</span>
                     </div>
-                    <div class="text-2xl md:text-3xl font-black text-primary-700">${result.tier}</div>
+                    <div class="text-2xl md:text-3xl font-black text-gray-900">${activeCount}<span class="text-sm font-normal text-gray-500 ml-1">명</span></div>
+                </div>
+
+                <div class="glass-panel p-5 md:p-6 rounded-xl border border-gray-100">
+                    <div class="flex items-center text-gray-500 mb-2">
+                        <i data-lucide="bike" class="w-4 h-4 md:w-5 md:h-5 mr-2 text-orange-500"></i>
+                        <span class="font-bold text-xs md:text-sm">주간 누적 배달건수</span>
+                    </div>
+                    <div class="text-2xl md:text-3xl font-black text-gray-900">${totalDeliveries.toLocaleString()}<span class="text-sm font-normal text-gray-500 ml-1">건</span></div>
+                </div>
+
+                <div class="glass-panel p-5 md:p-6 rounded-xl border border-gray-100 bg-gradient-to-br from-primary-50 to-white">
+                    <div class="flex items-center text-primary-700 mb-2">
+                        <i data-lucide="award" class="w-4 h-4 md:w-5 md:h-5 mr-2"></i>
+                        <span class="font-bold text-xs md:text-sm">현재 공식 등급</span>
+                    </div>
+                    <div class="text-2xl md:text-3xl font-black text-primary-700">${db.getGuildById(guildId).tier || 'None'}</div>
                 </div>
             </div>
 
@@ -268,6 +289,65 @@ const app = {
         
         // Render Chart.js
         setTimeout(() => this.renderChart(guildId), 50);
+
+        this.checkUpgradeEligibility(guildId, activeCount, totalDeliveries);
+    },
+
+    checkUpgradeEligibility(guildId, count, deliveries) {
+        const guild = db.getGuildById(guildId);
+        const currentTier = guild.tier || 'None';
+        let nextTier = null;
+
+        if (currentTier === 'None' && count >= 9) nextTier = 'Bronze';
+        if (currentTier === 'Bronze' && count >= 10 && deliveries >= 3000) nextTier = 'Silver';
+        if (currentTier === 'Silver' && count >= 15 && deliveries >= 4000) nextTier = 'Gold';
+
+        if (nextTier) {
+            const upgradeArea = document.getElementById('upgrade-area');
+            const requests = db.getUpgradeRequests() || [];
+            const pendingReq = requests.find(r => r.guildId === guildId && r.status === 'pending');
+
+            if (pendingReq) {
+                upgradeArea.innerHTML = `
+                    <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i data-lucide="clock" class="w-5 h-5 text-blue-500 mr-3"></i>
+                            <span class="text-sm font-bold text-blue-800">${nextTier} 등급 승급 심사 중입니다.</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                upgradeArea.innerHTML = `
+                    <div class="bg-gradient-to-r from-primary-600 to-primary-800 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between shadow-lg">
+                        <div class="flex items-center mb-3 md:mb-0">
+                            <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center mr-3">
+                                <i data-lucide="trending-up" class="w-6 h-6 text-white"></i>
+                            </div>
+                            <div class="text-white">
+                                <h4 class="font-bold text-sm">축하합니다! ${nextTier} 등급 승급 조건 달성</h4>
+                                <p class="text-xs opacity-90">상위 등급으로 승급하면 더 많은 길드원을 영입할 수 있습니다.</p>
+                            </div>
+                        </div>
+                        <button onclick="app.handleUpgradeRequest('${guildId}', '${currentTier}', '${nextTier}')" class="w-full md:w-auto px-6 py-2 bg-white text-primary-700 rounded-lg font-black text-sm hover:bg-primary-50 transition-colors shadow-sm">
+                            승급 신청하기
+                        </button>
+                    </div>
+                `;
+            }
+            lucide.createIcons();
+        }
+    },
+
+    handleUpgradeRequest(guildId, current, next) {
+        if (confirm(`${next} 등급으로 승급을 신청하시겠습니까?`)) {
+            try {
+                db.requestTierUpgrade(guildId, current, next);
+                alert('승급 신청이 완료되었습니다. 본사 승인 후 반영됩니다.');
+                this.navigate('dashboard-gm');
+            } catch (e) {
+                alert(e.message);
+            }
+        }
     },
 
     renderChart(guildId) {
@@ -578,6 +658,8 @@ const app = {
                 </div>
             </div>
 
+            <div id="admin-upgrade-requests-area" class="mb-6"></div>
+
             <div class="glass-panel rounded-xl border border-gray-100 p-6 mb-6 relative overflow-hidden">
                 <div class="absolute top-0 right-0 bg-blue-50 w-64 h-full transform skew-x-12 translate-x-10 z-0"></div>
                 <div class="relative z-10 flex justify-between items-center mb-6">
@@ -685,6 +767,62 @@ const app = {
             </div>
         `;
         lucide.createIcons();
+        this.renderAdminUpgradeRequests();
+    },
+
+    renderAdminUpgradeRequests() {
+        const requests = db.getUpgradeRequests().filter(r => r.status === 'pending');
+        const area = document.getElementById('admin-upgrade-requests-area');
+        if (!area) return;
+
+        if (requests.length === 0) {
+            area.innerHTML = '';
+            return;
+        }
+
+        const rows = requests.map(r => {
+            const guild = db.getGuildById(r.guildId);
+            return `
+                <div class="flex items-center justify-between p-4 bg-white border border-purple-100 rounded-xl mb-3 shadow-sm">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center mr-4 text-purple-600 shrink-0">
+                            <i data-lucide="arrow-big-up-dash" class="w-6 h-6"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-sm font-bold text-gray-800 truncate">${guild ? guild.name : '알 수 없는 길드'}</p>
+                            <p class="text-xs text-gray-500">${r.currentTier} ➜ <span class="text-purple-600 font-bold">${r.requestedTier}</span> 승급 요청</p>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2 shrink-0">
+                        <button onclick="app.handleApproveUpgrade('${r.id}')" class="px-4 py-1.5 bg-purple-600 text-white text-xs font-bold rounded-lg hover:bg-purple-700 transition-colors">승인</button>
+                        <button onclick="app.handleRejectUpgrade('${r.id}')" class="px-4 py-1.5 bg-gray-100 text-gray-600 text-xs font-bold rounded-lg hover:bg-gray-200 transition-colors">거절</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        area.innerHTML = `
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                <i data-lucide="star" class="w-5 h-5 mr-2 text-purple-500"></i> 승급 신청 대기 목록 (${requests.length}건)
+            </h3>
+            ${rows}
+        `;
+        lucide.createIcons();
+    },
+
+    handleApproveUpgrade(id) {
+        if (confirm('이 승급 요청을 승인하시겠습니까? 승인 시 해당 길드의 인원 제한이 상향됩니다.')) {
+            db.approveUpgrade(id);
+            alert('승급이 완료되었습니다.');
+            this.navigate('admin-overview');
+        }
+    },
+
+    handleRejectUpgrade(id) {
+        if (confirm('이 승급 요청을 거절하시겠습니까?')) {
+            db.rejectUpgrade(id);
+            this.navigate('admin-overview');
+        }
     },
 
     renderAdminHistory(container, selectedWeek = null) {

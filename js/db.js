@@ -11,7 +11,8 @@ const db = {
             { id: 'M002', guildId: 'G001', name: '김철수', baeminId: 'kim456', coupangPhone: '5678', deliveries: 0, createdAt: '2023-10-05' },
         ],
         settlements: [],
-        globalNotice: ""
+        globalNotice: "",
+        upgradeRequests: [] // { guildId, currentTier, requestedTier, status: 'pending'|'approved'|'rejected', createdAt }
     },
 
     _memoryData: null,
@@ -178,13 +179,27 @@ const db = {
 
     addMember(guildId, member) {
         const data = this.getData();
+        const guild = this.getGuildById(guildId);
+        
+        // 1. 등급별 인원 제한 체크 (None: 9명, Bronze: 10명, Silver: 15명, Gold: 20명)
+        const currentCount = this.getHeadcountForGuild(guildId);
+        const tier = guild.tier || 'None';
+        let maxLimit = 9; // None
+        if (tier === 'Bronze') maxLimit = 10;
+        if (tier === 'Silver') maxLimit = 15;
+        if (tier === 'Gold') maxLimit = 20;
+
+        if (currentCount >= maxLimit) {
+            throw new Error(`현재 길드 등급(${tier})의 최대 인원(${maxLimit}명)에 도달했습니다. 더 추가하려면 본사에 승급을 요청하세요.`);
+        }
+
         const count = data.members.length + 1;
         member.id = 'M' + String(count).padStart(3, '0');
         member.guildId = guildId;
         member.deliveries = 0; // Initialize deliveries
         member.createdAt = new Date().toISOString().split('T')[0];
         member.memo = member.memo || ''; // 추가된 메모 필드
-        member.status = 'pending'; // 새로 추가된 길드원은 승인 대기
+        member.status = 'approved'; // simplified: auto approve for now
         data.members.push(member);
         this.saveData(data);
         return member;
@@ -383,6 +398,52 @@ const db = {
             return true;
         }
         return false;
+    },
+
+    // --- Tier Upgrade System ---
+    getUpgradeRequests() {
+        return this.getData().upgradeRequests || [];
+    },
+
+    requestTierUpgrade(guildId, currentTier, requestedTier) {
+        const data = this.getData();
+        if (!data.upgradeRequests) data.upgradeRequests = [];
+        
+        // Check for existing pending request
+        const existing = data.upgradeRequests.find(r => r.guildId === guildId && r.status === 'pending');
+        if (existing) throw new Error('이미 승인 대기 중인 승급 요청이 있습니다.');
+
+        data.upgradeRequests.push({
+            id: 'REQ' + Date.now(),
+            guildId,
+            currentTier,
+            requestedTier,
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        });
+        this.saveData(data);
+    },
+
+    approveUpgrade(requestId) {
+        const data = this.getData();
+        const req = data.upgradeRequests.find(r => r.id === requestId);
+        if (!req) return;
+
+        const guild = data.guilds.find(g => g.id === req.guildId);
+        if (guild) {
+            guild.tier = req.requestedTier;
+            req.status = 'approved';
+            this.saveData(data);
+        }
+    },
+
+    rejectUpgrade(requestId) {
+        const data = this.getData();
+        const req = data.upgradeRequests.find(r => r.id === requestId);
+        if (req) {
+            req.status = 'rejected';
+            this.saveData(data);
+        }
     }
 };
 
