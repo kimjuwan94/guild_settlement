@@ -386,5 +386,4 @@ const db = {
     }
 };
 
-// Initialize on load
-db.init();
+// Note: db.loadFromServer() is called by app.init() in app.js on DOMContentLoaded
