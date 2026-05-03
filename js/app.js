@@ -1,0 +1,1126 @@
+const app = {
+    state: {
+        currentUser: null, // { role: 'admin'|'gm', id: string, guild?: object }
+        currentView: 'dashboard-gm',
+    },
+
+    async init() {
+        // 서버에서 데이터 불러오기 대기
+        await db.loadFromServer();
+
+        // Run auto-finalize check every time the app loads
+        const finalizedOldWeek = db.checkAndAutoFinalize(SettlementEngine);
+        if (finalizedOldWeek) {
+            console.log(`System auto-finalized week: ${finalizedOldWeek}`);
+            // We can optionally show a toast notification here if we had a toast system
+        }
+
+        // Check session or show login
+        const savedSession = sessionStorage.getItem('guildSysSession');
+        if (savedSession) {
+            this.state.currentUser = JSON.parse(savedSession);
+            document.getElementById('login-screen').classList.add('hidden');
+            this.updateUserUI();
+            this.navigate(this.state.currentUser.role === 'admin' ? 'admin-overview' : 'dashboard-gm');
+        } else {
+            document.getElementById('login-screen').classList.remove('hidden');
+        }
+    },
+
+    handleLogin(e) {
+        e.preventDefault();
+        const idInput = document.getElementById('login-id').value;
+        const pwInput = document.getElementById('login-pw').value;
+        const errorDiv = document.getElementById('login-error');
+
+        const user = db.authenticate(idInput, pwInput);
+        
+        if (user) {
+            this.state.currentUser = user;
+            sessionStorage.setItem('guildSysSession', JSON.stringify(user));
+            document.getElementById('login-screen').classList.add('hidden');
+            errorDiv.classList.add('hidden');
+            
+            // Re-run auto check just in case day crossed while sitting on login screen
+            const finalizedOldWeek = db.checkAndAutoFinalize(SettlementEngine);
+            if (finalizedOldWeek) {
+                alert(`시간이 지나 정산 주기가 변경되었습니다.\n지난 주차(${finalizedOldWeek})가 자동으로 마감 및 저장되었습니다.`);
+            }
+
+            this.updateUserUI();
+            
+            // Navigate based on role
+            this.navigate(user.role === 'admin' ? 'admin-overview' : 'dashboard-gm');
+        } else {
+            errorDiv.innerText = '아이디 또는 비밀번호가 일치하지 않습니다.';
+            errorDiv.classList.remove('hidden');
+        }
+    },
+
+    logout() {
+        sessionStorage.removeItem('guildSysSession');
+        this.state.currentUser = null;
+        document.getElementById('login-id').value = '';
+        document.getElementById('login-pw').value = '';
+        document.getElementById('login-screen').classList.remove('hidden');
+    },
+
+    updateUserUI() {
+        if (!this.state.currentUser) return;
+        
+        const isGm = this.state.currentUser.role === 'gm';
+        const guild = isGm ? this.state.currentUser.guild : null;
+        
+        const isAdmin = this.state.currentUser.role === 'admin';
+        const isImpersonating = this.state.currentUser.impersonatedByAdmin === true;
+
+        document.getElementById('current-user-avatar').innerText = !isAdmin ? 'GM' : 'A';
+        document.getElementById('current-user-avatar').className = !isAdmin 
+            ? "w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold"
+            : "w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold";
+            
+        document.getElementById('current-user-name').innerText = !isAdmin ? guild.gmName : '최고 관리자';
+        document.getElementById('current-user-role').innerText = !isAdmin ? guild.name : 'System Admin';
+
+        // Toggle nav items based on role
+        document.getElementById('nav-dashboard-gm').style.display = !isAdmin ? 'flex' : 'none';
+        document.getElementById('nav-members').style.display = !isAdmin ? 'flex' : 'none';
+        document.getElementById('nav-history').style.display = !isAdmin ? 'flex' : 'none'; // GM Only
+        document.getElementById('nav-upload').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
+        document.getElementById('nav-admin-overview').style.display = isAdmin ? 'flex' : 'none';
+        document.getElementById('nav-admin-history').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
+        document.getElementById('nav-admin-approvals').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
+
+        // Switch Account Buttons
+        document.getElementById('btn-switch-account').style.display = isAdmin ? 'flex' : 'none';
+        document.getElementById('btn-return-admin').style.display = isImpersonating ? 'flex' : 'none';
+    },
+
+    navigate(view) {
+        this.state.currentView = view;
+        
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('nav-active'));
+        const activeNav = document.getElementById(`nav-${view}`);
+        if(activeNav) activeNav.classList.add('nav-active');
+
+        const contentArea = document.getElementById('app-content');
+        const titleArea = document.getElementById('page-title');
+        const currentWeekName = db.getCurrentWeekName();
+
+        switch(view) {
+            case 'dashboard-gm':
+                titleArea.innerText = `이번 주 대시보드 (${currentWeekName})`;
+                this.renderDashboard(contentArea);
+                break;
+            case 'members':
+                titleArea.innerText = `소속 길드원 관리 (${currentWeekName})`;
+                this.renderMembers(contentArea);
+                break;
+            case 'history':
+                titleArea.innerText = '과거 정산 내역';
+                this.renderHistory(contentArea);
+                break;
+            case 'upload':
+                titleArea.innerText = '전체 길드 정산서 업로드 (Admin)';
+                this.renderUpload(contentArea);
+                break;
+            case 'admin-overview':
+                titleArea.innerText = `전체 길드 통합 현황 (${currentWeekName})`;
+                this.renderAdmin(contentArea);
+                break;
+            case 'admin-history':
+                titleArea.innerText = '과거 정산 및 지급 관리 (Admin)';
+                this.renderAdminHistory(contentArea);
+                break;
+            case 'admin-approvals':
+                titleArea.innerText = '신규 길드원 가입 승인 (Admin)';
+                this.renderAdminApprovals(contentArea);
+                break;
+        }
+    },
+
+    // --- Views ---
+
+    renderDashboard(container) {
+        if (this.state.currentUser.role === 'admin') return;
+
+        const guildId = this.state.currentUser.id;
+        const activeCount = db.getHeadcountForGuild(guildId);
+        const totalDeliveries = db.getTotalDeliveriesForGuild(guildId);
+        
+        const result = SettlementEngine.calculateSettlement(activeCount, totalDeliveries);
+
+        const globalNotice = db.getNotice();
+        const noticeHtml = globalNotice ? `
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded shadow-sm flex items-start">
+                <i data-lucide="bell-ring" class="w-5 h-5 text-red-500 mr-3 mt-0.5"></i>
+                <div>
+                    <h4 class="text-sm font-bold text-red-800 mb-1">본사 긴급 공지사항</h4>
+                    <p class="text-sm text-red-700 whitespace-pre-wrap">${globalNotice}</p>
+                </div>
+            </div>
+        ` : '';
+
+        // Get members for Top 3
+        const guildMembers = db.getMembers(guildId).filter(m => m.status === 'approved');
+        const sortedMembers = [...guildMembers].sort((a, b) => b.deliveries - a.deliveries).slice(0, 3);
+        const top3Html = sortedMembers.map((m, idx) => {
+            const colors = ['text-yellow-500', 'text-gray-400', 'text-amber-600'];
+            const bgColors = ['bg-yellow-50', 'bg-gray-50', 'bg-amber-50'];
+            return `
+                <div class="flex items-center justify-between p-3 ${bgColors[idx]} rounded-lg border border-gray-100 mb-2">
+                    <div class="flex items-center">
+                        <div class="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center mr-3 font-bold ${colors[idx]}">
+                            ${idx + 1}
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-800">${m.name}</p>
+                            <p class="text-xs text-gray-500">${m.baeminId || 'ID없음'}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-bold text-gray-900">${(m.deliveries || 0).toLocaleString()}건</p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            ${noticeHtml}
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="glass-panel p-6 rounded-xl border border-gray-100">
+                    <div class="flex items-center text-gray-500 mb-2">
+                        <i data-lucide="users" class="w-5 h-5 mr-2 text-blue-500"></i>
+                        <span class="font-medium text-sm">현재 소속 인원 (길드장 포함)</span>
+                    </div>
+                    <div class="text-3xl font-bold text-gray-900">${activeCount}<span class="text-lg font-normal text-gray-500 ml-1">명</span></div>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl border border-gray-100">
+                    <div class="flex items-center text-gray-500 mb-2">
+                        <i data-lucide="bike" class="w-5 h-5 mr-2 text-orange-500"></i>
+                        <span class="font-medium text-sm">주간 누적 배달건수</span>
+                    </div>
+                    <div class="text-3xl font-bold text-gray-900">${totalDeliveries.toLocaleString()}<span class="text-lg font-normal text-gray-500 ml-1">건</span></div>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl border border-gray-100 bg-gradient-to-br from-primary-50 to-white">
+                    <div class="flex items-center text-primary-700 mb-2">
+                        <i data-lucide="award" class="w-5 h-5 mr-2"></i>
+                        <span class="font-medium text-sm">현재 예상 등급</span>
+                    </div>
+                    <div class="text-3xl font-bold text-primary-700">${result.tier}</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                <div class="lg:col-span-2 glass-panel rounded-xl border border-gray-100 p-6 shadow-sm flex flex-col h-full">
+                    <h3 class="text-lg font-semibold mb-4 text-gray-800 border-b pb-2 flex items-center">
+                        <i data-lucide="trending-up" class="w-5 h-5 mr-2 text-primary-600"></i> 최근 4주간 실적 추이
+                    </h3>
+                    <div class="flex-grow w-full relative min-h-[250px]">
+                        <canvas id="dashboardChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="glass-panel rounded-xl border border-gray-100 p-6 shadow-sm flex flex-col h-full">
+                    <h3 class="text-lg font-semibold mb-4 text-gray-800 border-b pb-2 flex items-center">
+                        <i data-lucide="crown" class="w-5 h-5 mr-2 text-yellow-500"></i> 이번 주 명예의 전당 (TOP 3)
+                    </h3>
+                    <div class="flex-grow flex flex-col justify-center">
+                        ${sortedMembers.length > 0 ? top3Html : '<p class="text-center text-sm text-gray-500 py-4">아직 실적이 등록된 길드원이 없습니다.</p>'}
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-xl border border-gray-100 p-8 shadow-sm">
+                <h3 class="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">예상 정산 결과 (화요일 마감 기준)</h3>
+                <div class="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <span class="text-gray-600">인정 배달 건수 (Limit Cap 적용)</span>
+                        <span class="font-semibold text-gray-900">${result.recognizedDeliveries.toLocaleString()} 건</span>
+                    </div>
+                    <div class="flex justify-between items-center mb-4">
+                        <span class="text-gray-600">적용 단가 (1,000건당)</span>
+                        <span class="font-semibold text-gray-900">${result.pricePer1000 ? result.pricePer1000.toLocaleString() : 0} 원</span>
+                    </div>
+                    <div class="flex justify-between items-center mb-4">
+                        <span class="text-gray-600">정산 블록수</span>
+                        <span class="font-semibold text-gray-900">${result.chunks} 묶음</span>
+                    </div>
+                    <hr class="my-4 border-gray-200">
+                    <div class="flex justify-between items-center text-xl">
+                        <span class="font-bold text-gray-800">예상 지급액</span>
+                        <span class="font-bold text-primary-600">${result.totalAmount.toLocaleString()} 원</span>
+                    </div>
+                    ${result.message.includes('미달') ? `<p class="text-sm text-red-500 mt-4 font-medium">${result.message}</p>` : ''}
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
+        
+        // Render Chart.js
+        setTimeout(() => this.renderChart(guildId), 50);
+    },
+
+    renderChart(guildId) {
+        const canvas = document.getElementById('dashboardChart');
+        if (!canvas) return;
+
+        const settlements = db.getSettlementsByGuild(guildId);
+        // Get last 4 weeks (or less if not available)
+        const recentSettlements = settlements.slice(0, 4).reverse();
+        
+        let labels = [];
+        let dataPoints = [];
+
+        if (recentSettlements.length === 0) {
+            labels = ['-'];
+            dataPoints = [0];
+        } else {
+            labels = recentSettlements.map(s => s.weekName.replace('년 ', '\n').replace('월 ', '/').replace('주차', '주'));
+            dataPoints = recentSettlements.map(s => s.totalDeliveries);
+        }
+
+        new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '주간 총 배달 건수',
+                    data: dataPoints,
+                    borderColor: '#4f46e5',
+                    backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                    borderWidth: 3,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#4f46e5',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { borderDash: [2, 4], color: '#f3f4f6' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    },
+
+    renderHistory(container) {
+        if (this.state.currentUser.role === 'admin') return;
+        
+        const guildId = this.state.currentUser.id;
+        const settlements = db.getSettlementsByGuild(guildId);
+        
+        if (settlements.length === 0) {
+            container.innerHTML = `
+                <div class="glass-panel rounded-xl border border-gray-100 p-12 text-center">
+                    <i data-lucide="inbox" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">과거 정산 내역이 없습니다</h3>
+                    <p class="text-sm text-gray-500">아직 수요일이 되어 자동 마감된 정산 기록이 존재하지 않습니다.</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+
+        let historyRows = settlements.map(s => `
+            <div class="glass-panel p-6 rounded-xl border border-gray-100 mb-4 hover:border-blue-300 transition-colors relative">
+                ${s.isPaid ? 
+                    '<div class="absolute top-4 right-6 bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full border border-green-200 shadow-sm"><i data-lucide="check-circle-2" class="w-3 h-3 inline mr-1"></i>본사 지급 완료</div>' : 
+                    '<div class="absolute top-4 right-6 bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1 rounded-full border border-orange-200 shadow-sm"><i data-lucide="clock" class="w-3 h-3 inline mr-1"></i>지급 대기 중</div>'}
+                <div class="flex justify-between items-center border-b border-gray-100 pb-3 mb-4 mt-2">
+                    <h4 class="text-lg font-bold text-gray-900">${s.weekName}</h4>
+                    <span class="text-sm text-gray-500">마감 승인일: ${s.date}</span>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-xs text-gray-500 mb-1">달성 등급</p>
+                        <p class="font-bold text-primary-700">${s.tier}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500 mb-1">마감 인원</p>
+                        <p class="font-bold text-gray-800">${s.memberCount}명</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500 mb-1">총 배달건수 (인정건수)</p>
+                        <p class="font-bold text-gray-800">${s.totalDeliveries.toLocaleString()}건 <span class="text-xs font-normal text-gray-400">(${s.recognizedDeliveries.toLocaleString()}건 인정)</span></p>
+                    </div>
+                    <div class="text-right border-l pl-4 border-gray-100">
+                        <p class="text-xs text-gray-500 mb-1">최종 지급 확정액</p>
+                        <p class="text-xl font-black text-blue-600">${s.totalAmount.toLocaleString()}원</p>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="max-w-4xl mx-auto">
+                <h3 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                    <i data-lucide="calendar-check" class="w-6 h-6 mr-2 text-primary-600"></i> 매주 수요일 자동 마감된 정산 기록
+                </h3>
+                ${historyRows}
+            </div>
+        `;
+        lucide.createIcons();
+    },
+
+    renderMembers(container) {
+        if (this.state.currentUser.role === 'admin') return;
+        const guildId = this.state.currentUser.id;
+        const members = db.getMembers(guildId);
+        
+        const getStatusBadge = (status) => {
+            if(status === 'pending') return '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 ml-2">승인 대기중</span>';
+            if(status === 'rejected') return '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 ml-2">반려됨</span>';
+            return '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 ml-2">승인 완료</span>';
+        };
+
+        let rows = members.map(m => `
+            <tr class="border-b border-gray-100 hover:bg-gray-50">
+                <td class="py-3 px-4 text-sm font-medium text-gray-900">${m.id}</td>
+                <td class="py-3 px-4 text-sm text-gray-700 font-semibold">
+                    ${m.name}
+                    ${getStatusBadge(m.status)}
+                    ${m.memo ? `<br><span class="text-xs text-gray-400 font-normal truncate max-w-[100px] inline-block" title="${m.memo}">📝 ${m.memo}</span>` : ''}
+                </td>
+                <td class="py-3 px-4 text-sm text-gray-700 font-mono">${m.baeminId || '-'}</td>
+                <td class="py-3 px-4 text-sm text-gray-700 font-mono">${m.coupangPhone || '-'}</td>
+                <td class="py-3 px-4 text-sm font-bold text-blue-600">${(m.deliveries || 0).toLocaleString()}건</td>
+                <td class="py-3 px-4 text-sm text-right">
+                    <button type="button" onclick="app.deleteMember('${m.id}')" class="text-red-500 hover:text-red-700 text-xs font-semibold px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors">삭제</button>
+                </td>
+            </tr>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="glass-panel rounded-xl border border-gray-100 p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800">이번 주 소속 길드원 누적 실적</h3>
+                    <button onclick="document.getElementById('add-modal').classList.remove('hidden')" class="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm flex items-center">
+                        <i data-lucide="plus" class="w-4 h-4 mr-2"></i>신규 등록
+                    </button>
+                </div>
+
+                <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6 text-sm text-blue-700">
+                    <p class="font-bold flex items-center mb-1"><i data-lucide="info" class="w-4 h-4 mr-1"></i> 길드원 등록 안내</p>
+                    <p>신규로 등록한 길드원은 <b>[승인 대기중]</b> 상태가 되며, 본사 최고 관리자의 <b>최종 승인 이후에 정식 인원수 및 실적 합산</b>에 반영됩니다. 등록 후 본사에 승인 요청을 해주세요.</p>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                <th class="py-3 px-4 font-semibold rounded-tl-lg">사번</th>
+                                <th class="py-3 px-4 font-semibold">이름</th>
+                                <th class="py-3 px-4 font-semibold">배민 ID</th>
+                                <th class="py-3 px-4 font-semibold">쿠팡 뒷자리</th>
+                                <th class="py-3 px-4 font-semibold text-blue-700">이번 주 누적 배달건수</th>
+                                <th class="py-3 px-4 font-semibold rounded-tr-lg text-right">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows.length > 0 ? rows : `<tr><td colspan="6" class="text-center py-8 text-gray-400">등록된 길드원이 없습니다.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="add-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+                <div class="glass-panel w-full max-w-md p-6 rounded-xl shadow-xl">
+                    <h3 class="text-lg font-semibold mb-4 border-b pb-2">신규 길드원 등록</h3>
+                    <form id="add-member-form" onsubmit="app.addMember(event)">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">이름 <span class="text-xs text-gray-500 font-normal">(타명의 사용시 쉼표로 구분. 예: 홍길동,김가족)</span></label>
+                                <input type="text" id="m-name" required placeholder="홍길동" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">배민 커넥트 ID <span class="text-xs text-gray-500 font-normal">(선택, 다중 쉼표 가능)</span></label>
+                                <input type="text" id="m-baemin" placeholder="hong123, kim123" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">쿠팡이츠 뒷자리 <span class="text-xs text-gray-500 font-normal">(선택, 다중 쉼표 가능)</span></label>
+                                <input type="text" id="m-coupang" placeholder="1234, 5678" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">메모/비고 <span class="text-xs text-gray-500 font-normal">(선택)</span></label>
+                                <input type="text" id="m-memo" placeholder="예: 김가족 명의 사용" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 bg-yellow-50">
+                            </div>
+                        </div>
+                        <div class="mt-6 flex justify-end space-x-3">
+                            <button type="button" onclick="document.getElementById('add-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
+                            <button type="submit" class="px-4 py-2 text-sm text-white bg-primary-600 rounded-md hover:bg-primary-700">저장</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
+    },
+
+    renderUpload(container) {
+        if (this.state.currentUser.role !== 'admin') return;
+        container.innerHTML = `
+            <div class="max-w-3xl mx-auto space-y-6">
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start">
+                    <i data-lucide="info" class="w-5 h-5 text-blue-500 mr-3 mt-0.5 shrink-0"></i>
+                    <p class="text-sm text-blue-800 leading-relaxed">
+                        <strong>전체 길드 일괄 합산 (Admin 전용)</strong><br/>
+                        여러 엑셀 파일을 선택하여 업로드하면 <b>전체 마스터 길드원 DB</b>를 검색하여 각 길드장의 현황판에 배달 실적이 계속 누적 합산(+)됩니다.<br/>
+                        <span class="text-xs text-blue-600 font-semibold mt-1 inline-block">※ 매주 수요일 자정을 기점으로 시스템 접속 시 자동으로 이전 데이터가 마감 처리되고 초기화됩니다.</span>
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="glass-panel p-6 rounded-xl border border-gray-100 hover:border-primary-300 transition-colors">
+                        <div class="flex items-center mb-4">
+                            <div class="w-10 h-10 rounded-full bg-[#2ac1bc] flex items-center justify-center text-white font-bold mr-3">배민</div>
+                            <h3 class="font-semibold text-gray-800">배달의민족 엑셀 업로드</h3>
+                        </div>
+                        <input type="file" id="file-baemin" accept=".xlsx,.xls,.csv" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 mb-4 cursor-pointer"/>
+                        <button onclick="app.processUpload('baemin')" class="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors">파일 일괄 파싱 및 누적</button>
+                    </div>
+
+                    <div class="glass-panel p-6 rounded-xl border border-gray-100 hover:border-primary-300 transition-colors">
+                        <div class="flex items-center mb-4">
+                            <div class="w-10 h-10 rounded-full bg-[#ff3232] flex items-center justify-center text-white font-bold mr-3">쿠팡</div>
+                            <h3 class="font-semibold text-gray-800">쿠팡이츠 엑셀 업로드</h3>
+                        </div>
+                        <input type="file" id="file-coupang" accept=".xlsx,.xls,.csv" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 mb-4 cursor-pointer"/>
+                        <button onclick="app.processUpload('coupang')" class="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors">파일 일괄 파싱 및 누적</button>
+                    </div>
+                </div>
+
+                <div id="upload-result" class="hidden mt-6"></div>
+            </div>
+        `;
+        lucide.createIcons();
+    },
+
+    renderAdmin(container) {
+        if (this.state.currentUser.role !== 'admin') return;
+        const guilds = db.getGuilds();
+        const currentWeekName = db.getCurrentWeekName();
+        
+        let guildRows = guilds.map(g => {
+            const activeCount = db.getHeadcountForGuild(g.id);
+            const deliveries = db.getTotalDeliveriesForGuild(g.id);
+            const settlement = SettlementEngine.calculateSettlement(activeCount, deliveries);
+            
+            return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="py-3 px-4 text-sm font-medium text-gray-900">${g.name}</td>
+                    <td class="py-3 px-4 text-sm text-gray-700">${g.gmName}</td>
+                    <td class="py-3 px-4 text-sm">
+                        <div class="flex items-center space-x-2">
+                            <div>
+                                <div class="font-mono text-xs bg-gray-100 px-2 py-1 rounded inline-block">ID: ${g.username}</div>
+                                <div class="font-mono text-xs bg-red-50 text-red-600 px-2 py-1 rounded inline-block mt-1">PW: ${g.password}</div>
+                            </div>
+                            <button onclick="app.promptEditAccount('${g.id}', '${g.username}', '${g.password}', '${g.bankName || ''}', '${g.accountNumber || ''}')" class="text-gray-400 hover:text-blue-600 transition-colors" title="계정 및 계좌 정보 수정">
+                                <i data-lucide="pencil" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4 text-sm text-gray-700 text-center">${activeCount}명</td>
+                    <td class="py-3 px-4 text-sm text-blue-600 font-bold text-center">${deliveries.toLocaleString()}건</td>
+                    <td class="py-3 px-4 text-sm font-medium text-primary-700 text-center">${settlement.tier}</td>
+                    <td class="py-3 px-4 text-sm text-right font-bold text-gray-900">${settlement.totalAmount.toLocaleString()}원</td>
+                    <td class="py-3 px-4 text-sm text-center">
+                        <button onclick="app.switchToGuild('${g.id}')" class="px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 font-bold text-xs flex items-center justify-center mx-auto transition-colors">
+                            <i data-lucide="log-in" class="w-3 h-3 mr-1"></i> 접속
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        const currentNotice = db.getNotice();
+
+        container.innerHTML = `
+            <div class="glass-panel rounded-xl border border-gray-100 p-6 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <i data-lucide="bell-ring" class="w-5 h-5 mr-2 text-red-500"></i> 전 길드 대상 공지사항 관리
+                </h3>
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <textarea id="admin-notice-input" rows="2" class="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm" placeholder="모든 길드장의 화면 최상단에 고정 노출될 긴급 공지사항을 입력하세요. 비워두면 노출되지 않습니다.">${currentNotice}</textarea>
+                    <button onclick="app.saveNotice()" class="bg-red-50 text-red-600 border border-red-200 px-6 py-2 rounded-lg text-sm font-bold hover:bg-red-100 transition-colors whitespace-nowrap self-end sm:self-auto h-full min-h-[42px]">
+                        공지 업데이트
+                    </button>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-xl border border-gray-100 p-6 mb-6 relative overflow-hidden">
+                <div class="absolute top-0 right-0 bg-blue-50 w-64 h-full transform skew-x-12 translate-x-10 z-0"></div>
+                <div class="relative z-10 flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">이번 주 실시간 길드 현황 (총 ${guilds.length}개)</h3>
+                        <p class="text-sm font-bold text-blue-600 mt-1">
+                            <i data-lucide="clock" class="w-4 h-4 inline mb-0.5"></i> 진행 중인 주차: ${currentWeekName}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">수요일 자정이 지나고 사이트 접속 시 시스템이 자동으로 데이터를 마감 처리하고 리셋합니다.</p>
+                    </div>
+                    <div class="flex space-x-3">
+                        <button onclick="document.getElementById('admin-add-modal').classList.remove('hidden')" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm flex items-center">
+                            <i data-lucide="plus" class="w-4 h-4 mr-2"></i>신규 길드 생성
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="overflow-x-auto relative z-10">
+                    <table class="w-full text-left bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                <th class="py-3 px-4 font-semibold rounded-tl-lg">길드명</th>
+                                <th class="py-3 px-4 font-semibold">길드장명</th>
+                                <th class="py-3 px-4 font-semibold">발급된 계정 정보</th>
+                                <th class="py-3 px-4 font-semibold text-center">길드원 수</th>
+                                <th class="py-3 px-4 font-semibold text-center text-blue-700">이번주 누적건수</th>
+                                <th class="py-3 px-4 font-semibold text-center">예상 등급</th>
+                                <th class="py-3 px-4 font-semibold text-right">예상 정산금</th>
+                                <th class="py-3 px-4 font-semibold rounded-tr-lg text-center">화면 전환</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${guildRows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Admin Guild Creation Modal -->
+            <div id="admin-add-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+                <div class="glass-panel w-full max-w-md p-6 rounded-xl shadow-xl">
+                    <h3 class="text-lg font-semibold mb-4 border-b pb-2">신규 길드 및 접속 계정 생성</h3>
+                    <form id="add-guild-form" onsubmit="app.addGuild(event)">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">길드명</label>
+                                <input type="text" id="g-name" required placeholder="예: 구로가산 길드" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">길드장(GM) 이름</label>
+                                <input type="text" id="g-gmname" required placeholder="예: 김길동" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">정산 은행명 <span class="text-xs font-normal">(선택)</span></label>
+                                    <input type="text" id="g-bankname" placeholder="국민은행" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">계좌번호 <span class="text-xs font-normal">(선택)</span></label>
+                                    <input type="text" id="g-account" placeholder="- 없이 입력" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50">
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-500">※ 생성 완료 시 접속용 아이디와 임시 비밀번호가 자동 발급됩니다.</p>
+                        </div>
+                        <div class="mt-6 flex justify-end space-x-3">
+                            <button type="button" onclick="document.getElementById('admin-add-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
+                            <button type="submit" class="px-4 py-2 text-sm text-white bg-purple-600 rounded-md hover:bg-purple-700">생성하기</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Admin Account Edit Modal -->
+            <div id="admin-edit-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+                <div class="glass-panel w-full max-w-md p-6 rounded-xl shadow-xl">
+                    <h3 class="text-lg font-semibold mb-4 border-b pb-2 text-blue-800"><i data-lucide="key-round" class="w-5 h-5 inline mr-1"></i>계정 정보 수정</h3>
+                    <form id="edit-account-form" onsubmit="app.updateAccount(event)">
+                        <input type="hidden" id="edit-g-id">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">접속 아이디 변경</label>
+                                <input type="text" id="edit-g-id-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">새 비밀번호</label>
+                                <input type="text" id="edit-g-pw-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 mt-2">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">정산 은행명</label>
+                                    <input type="text" id="edit-g-bankname-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">계좌번호</label>
+                                    <input type="text" id="edit-g-account-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-6 flex justify-end space-x-3">
+                            <button type="button" onclick="document.getElementById('admin-edit-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
+                            <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700">변경사항 저장</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
+    },
+
+    renderAdminHistory(container, selectedWeek = null) {
+        if (this.state.currentUser.role !== 'admin') return;
+        
+        const allSettlements = db.getAllSettlements();
+        if (allSettlements.length === 0) {
+            container.innerHTML = `
+                <div class="glass-panel rounded-xl border border-gray-100 p-12 text-center">
+                    <i data-lucide="wallet" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">과거 정산 내역이 없습니다</h3>
+                    <p class="text-sm text-gray-500">아직 마감된 정산 기록이 존재하지 않습니다.</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+
+        // Get unique weeks sorted descending
+        const uniqueWeeks = [...new Set(allSettlements.map(s => s.weekName))].reverse();
+        const activeWeek = selectedWeek || uniqueWeeks[0];
+
+        // Filter settlements by selected week
+        const weekSettlements = allSettlements.filter(s => s.weekName === activeWeek);
+        const guilds = db.getGuilds();
+
+        const optionsHtml = uniqueWeeks.map(w => `<option value="${w}" ${w === activeWeek ? 'selected' : ''}>${w}</option>`).join('');
+
+        let rows = weekSettlements.map(s => {
+            const guildName = guilds.find(g => g.id === s.guildId)?.name || '알 수 없음';
+            const gmName = guilds.find(g => g.id === s.guildId)?.gmName || '알 수 없음';
+            
+            const btnClass = s.isPaid 
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200' 
+                : 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200';
+            const icon = s.isPaid ? 'check-circle-2' : 'clock';
+            const btnText = s.isPaid ? '지급 완료됨' : '지급 대기중';
+
+            return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td class="py-4 px-4 text-sm font-medium text-gray-900">${guildName}</td>
+                    <td class="py-4 px-4 text-sm text-gray-700">${gmName}</td>
+                    <td class="py-4 px-4 text-sm text-center text-gray-600">${s.memberCount}명</td>
+                    <td class="py-4 px-4 text-sm text-center text-gray-600">${s.totalDeliveries.toLocaleString()}건</td>
+                    <td class="py-4 px-4 text-sm text-center font-bold text-primary-700">${s.tier}</td>
+                    <td class="py-4 px-4 text-sm text-right font-black text-blue-600">${s.totalAmount.toLocaleString()}원</td>
+                    <td class="py-4 px-4 text-sm text-right flex items-center justify-end space-x-2">
+                        <button onclick="app.promptEditSettlement('${s.id}')" class="px-2 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors flex items-center" title="정산 내역 수정(보정)">
+                            <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="app.togglePayment('${s.id}', '${activeWeek}')" class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center ${btnClass}">
+                            <i data-lucide="${icon}" class="w-3.5 h-3.5 mr-1.5"></i>${btnText}
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="glass-panel rounded-xl border border-gray-100 p-6 shadow-sm">
+                <div class="flex flex-col sm:flex-row justify-between items-center mb-6 pb-4 border-b border-gray-100">
+                    <div class="mb-4 sm:mb-0">
+                        <h3 class="text-lg font-semibold text-gray-800 flex items-center">
+                            <i data-lucide="calendar-days" class="w-5 h-5 mr-2 text-primary-600"></i> 과거 정산 내역 및 지급 상태 관리
+                        </h3>
+                        <p class="text-xs text-gray-500 mt-1">이전에 마감된 주차의 정산 결과를 확인하고, 입금이 완료된 길드를 체크하세요.</p>
+                    </div>
+                    <div class="w-full sm:w-auto flex flex-col sm:flex-row gap-4 items-end">
+                        <button onclick="app.downloadTransferExcel('${activeWeek}')" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors shadow-sm flex items-center h-full min-h-[42px] w-full sm:w-auto justify-center">
+                            <i data-lucide="download" class="w-4 h-4 mr-2"></i>이체용 엑셀 다운로드
+                        </button>
+                        <div class="w-full sm:w-64">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">조회할 주차 선택</label>
+                            <select onchange="app.renderAdminHistory(document.getElementById('app-content'), this.value)" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                                ${optionsHtml}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                <th class="py-3 px-4 font-semibold rounded-tl-lg">길드명</th>
+                                <th class="py-3 px-4 font-semibold">길드장명</th>
+                                <th class="py-3 px-4 font-semibold text-center">마감 인원</th>
+                                <th class="py-3 px-4 font-semibold text-center">총 배달건수</th>
+                                <th class="py-3 px-4 font-semibold text-center">달성 등급</th>
+                                <th class="py-3 px-4 font-semibold text-right">최종 확정 지급액</th>
+                                <th class="py-3 px-4 font-semibold rounded-tr-lg text-right">관리 / 상태 변경</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
+    },
+
+    renderAdminApprovals(container) {
+        if (this.state.currentUser.role !== 'admin') return;
+        
+        const pendingMembers = db.getAllPendingMembers();
+        const guilds = db.getGuilds();
+        
+        if (pendingMembers.length === 0) {
+            container.innerHTML = `
+                <div class="glass-panel rounded-xl border border-gray-100 p-12 text-center">
+                    <i data-lucide="user-check" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">승인 대기 중인 길드원이 없습니다</h3>
+                    <p class="text-sm text-gray-500">모든 길드원 가입 요청이 처리되었습니다.</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+
+        let rows = pendingMembers.map(m => {
+            const guildName = guilds.find(g => g.id === m.guildId)?.name || '알 수 없음';
+            return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td class="py-4 px-4 text-sm font-medium text-gray-900">${guildName}</td>
+                    <td class="py-4 px-4 text-sm text-gray-800 font-bold">${m.name}</td>
+                    <td class="py-4 px-4 text-sm text-gray-600 font-mono">${m.baeminId || '-'}</td>
+                    <td class="py-4 px-4 text-sm text-gray-600 font-mono">${m.coupangPhone || '-'}</td>
+                    <td class="py-4 px-4 text-sm text-gray-500 max-w-[150px] truncate" title="${m.memo || ''}">${m.memo || '-'}</td>
+                    <td class="py-4 px-4 text-sm text-right">
+                        <button onclick="app.approveMember('${m.id}')" class="px-3 py-1.5 rounded-md text-xs font-bold bg-green-600 text-white hover:bg-green-700 transition-colors mr-2">
+                            승인
+                        </button>
+                        <button onclick="app.rejectMember('${m.id}')" class="px-3 py-1.5 rounded-md text-xs font-bold bg-red-100 text-red-700 hover:bg-red-200 transition-colors">
+                            반려
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="glass-panel rounded-xl border border-gray-100 p-6 shadow-sm">
+                <div class="mb-6 pb-4 border-b border-gray-100">
+                    <h3 class="text-lg font-semibold text-gray-800 flex items-center">
+                        <i data-lucide="user-plus" class="w-5 h-5 mr-2 text-primary-600"></i> 신규 길드원 가입 승인 대기 목록
+                        <span class="ml-3 bg-red-100 text-red-800 text-xs font-bold px-2 py-0.5 rounded-full">${pendingMembers.length}명 대기중</span>
+                    </h3>
+                    <p class="text-xs text-gray-500 mt-2">각 길드장이 등록한 신규 인원을 확인하고 승인해 주세요. 승인 전까지는 인원수 및 실적 합산에 포함되지 않습니다.</p>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                <th class="py-3 px-4 font-semibold rounded-tl-lg">소속 길드</th>
+                                <th class="py-3 px-4 font-semibold">이름</th>
+                                <th class="py-3 px-4 font-semibold">배민 ID</th>
+                                <th class="py-3 px-4 font-semibold">쿠팡 뒷자리</th>
+                                <th class="py-3 px-4 font-semibold">메모(비고)</th>
+                                <th class="py-3 px-4 font-semibold rounded-tr-lg text-right">관리 액션</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
+    },
+
+    // --- Actions ---
+
+    showSwitchModal() {
+        const guilds = db.getGuilds();
+        const listDiv = document.getElementById('switch-guild-list');
+        listDiv.innerHTML = guilds.map(g => `
+            <button onclick="app.switchToGuild('${g.id}')" class="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors flex justify-between items-center bg-white shadow-sm">
+                <span class="font-bold text-gray-800">${g.name}</span>
+                <span class="text-xs text-gray-500"><i data-lucide="user" class="w-3 h-3 inline"></i> ${g.gmName}</span>
+            </button>
+        `).join('');
+        lucide.createIcons();
+        document.getElementById('switch-account-modal').classList.remove('hidden');
+    },
+
+    switchToGuild(guildId) {
+        const guild = db.getGuildById(guildId);
+        if(!guild) return;
+        
+        const user = { role: 'gm', id: guild.id, guild: guild, impersonatedByAdmin: true };
+        this.state.currentUser = user;
+        sessionStorage.setItem('guildSysSession', JSON.stringify(user));
+        
+        document.getElementById('switch-account-modal').classList.add('hidden');
+        this.updateUserUI();
+        this.navigate('dashboard-gm');
+    },
+
+    returnToAdmin() {
+        const user = { role: 'admin', id: 'admin' };
+        this.state.currentUser = user;
+        sessionStorage.setItem('guildSysSession', JSON.stringify(user));
+        
+        this.updateUserUI();
+        this.navigate('admin-overview');
+    },
+
+    togglePayment(settlementId, activeWeek) {
+        db.toggleSettlementStatus(settlementId);
+        this.renderAdminHistory(document.getElementById('app-content'), activeWeek);
+    },
+
+    approveMember(id) {
+        try {
+            // 브라우저 팝업 차단 문제 우회
+            db.updateMemberStatus(id, 'approved');
+            app.renderAdminApprovals(document.getElementById('app-content'));
+        } catch(e) {
+            console.error(e);
+        }
+    },
+
+    rejectMember(id) {
+        try {
+            // 브라우저 팝업 차단 문제 우회
+            db.updateMemberStatus(id, 'rejected');
+            app.renderAdminApprovals(document.getElementById('app-content'));
+        } catch(e) {
+            console.error(e);
+        }
+    },
+
+    promptEditAccount(guildId, currentUsername, currentPassword, currentBank, currentAccount) {
+        document.getElementById('edit-g-id').value = guildId;
+        document.getElementById('edit-g-id-input').value = currentUsername;
+        document.getElementById('edit-g-pw-input').value = currentPassword;
+        document.getElementById('edit-g-bankname-input').value = currentBank || '';
+        document.getElementById('edit-g-account-input').value = currentAccount || '';
+        document.getElementById('admin-edit-modal').classList.remove('hidden');
+    },
+
+    updateAccount(e) {
+        e.preventDefault();
+        const guildId = document.getElementById('edit-g-id').value;
+        const newId = document.getElementById('edit-g-id-input').value.trim();
+        const newPw = document.getElementById('edit-g-pw-input').value.trim();
+        const newBank = document.getElementById('edit-g-bankname-input').value.trim();
+        const newAcc = document.getElementById('edit-g-account-input').value.trim();
+
+        if (newId === '') {
+            alert('아이디를 입력해주세요.');
+            return;
+        }
+
+        db.updateGuild(guildId, newId, newPw, newBank, newAcc);
+        document.getElementById('admin-edit-modal').classList.add('hidden');
+        this.renderAdmin(document.getElementById('app-content'));
+        alert('계정 및 계좌 정보가 성공적으로 변경되었습니다.');
+    },
+
+    addGuild(e) {
+        e.preventDefault();
+        const name = document.getElementById('g-name').value;
+        const gmName = document.getElementById('g-gmname').value;
+        const bankName = document.getElementById('g-bankname').value.trim();
+        const accountNumber = document.getElementById('g-account').value.trim();
+        
+        db.createGuild(name, gmName, bankName, accountNumber);
+        document.getElementById('admin-add-modal').classList.add('hidden');
+        this.renderAdmin(document.getElementById('app-content'));
+    },
+
+    saveNotice() {
+        const text = document.getElementById('admin-notice-input').value;
+        db.updateNotice(text);
+        alert('공지사항이 업데이트 되었습니다. 길드장 대시보드 상단에 즉시 노출됩니다.');
+    },
+
+    promptEditSettlement(settlementId) {
+        try {
+            const data = db.getData();
+            const s = data.settlements.find(x => x.id === settlementId);
+            if(!s) return;
+            
+            const countStr = prompt(`[${s.weekName}] 최종 인정 건수를 입력하세요. (기존: ${s.totalDeliveries}건)`, s.totalDeliveries);
+            if(countStr === null) return;
+            
+            const amtStr = prompt(`[${s.weekName}] 최종 확정 지급액을 입력하세요. (기존: ${s.totalAmount}원)`, s.totalAmount);
+            if(amtStr === null) return;
+
+            const newCount = parseInt(countStr.replace(/,/g, ''), 10);
+            const newAmt = parseInt(amtStr.replace(/,/g, ''), 10);
+
+            if(isNaN(newCount) || isNaN(newAmt)) {
+                alert('올바른 숫자를 입력해주세요.');
+                return;
+            }
+
+            db.updateSettlementManual(settlementId, newCount, newAmt);
+            alert('과거 정산 내역이 강제 보정되었습니다.');
+            this.renderAdminHistory(document.getElementById('app-content'), s.weekName);
+        } catch(e) {
+            console.error(e);
+        }
+    },
+
+    downloadTransferExcel(weekName) {
+        const settlements = db.getAllSettlements().filter(s => s.weekName === weekName);
+        if(settlements.length === 0) {
+            alert('해당 주차에 다운로드할 데이터가 없습니다.');
+            return;
+        }
+
+        const guilds = db.getGuilds();
+        
+        // CSV Header
+        let csvContent = "\\uFEFF"; // BOM for excel encoding
+        csvContent += "은행명,계좌번호,예금주(길드장명),소속길드,이체금액(원),비고(주차)\\n";
+
+        settlements.forEach(s => {
+            const g = guilds.find(x => x.id === s.guildId);
+            if(g) {
+                // Remove commas from strings to not break CSV
+                const bank = (g.bankName || '은행미입력').replace(/,/g, '');
+                const acc = (g.accountNumber || '계좌미입력').replace(/,/g, '').replace(/-/g, '');
+                const name = g.gmName.replace(/,/g, '');
+                const guildName = g.name.replace(/,/g, '');
+                const amt = s.totalAmount;
+                const week = s.weekName.replace(/,/g, '');
+                
+                csvContent += `${bank},${acc},${name},${guildName},${amt},${week}\\n`;
+            }
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `이체양식_${weekName.replace(/\\s/g,'_')}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    },
+
+    addMember(e) {
+        e.preventDefault();
+        const guildId = this.state.currentUser.id;
+        const name = document.getElementById('m-name').value;
+        const baeminId = document.getElementById('m-baemin').value.trim();
+        const coupangPhone = document.getElementById('m-coupang').value.trim();
+        const memo = document.getElementById('m-memo').value.trim();
+
+        if (!baeminId && !coupangPhone) {
+            alert('배민 커넥트 ID 또는 쿠팡이츠 뒷자리 중 최소 하나는 입력해야 실적 매칭이 가능합니다.');
+        }
+
+        db.addMember(guildId, { name, baeminId, coupangPhone, memo });
+        document.getElementById('add-modal').classList.add('hidden');
+        this.renderMembers(document.getElementById('app-content'));
+    },
+
+    deleteMember(id) {
+        try {
+            // 브라우저 팝업(confirm)이 차단된 경우를 대비하여 팝업 없이 즉시 삭제하도록 임시 우회
+            db.deleteMember(id);
+            app.renderMembers(document.getElementById('app-content'));
+        } catch(e) {
+            console.error('삭제 중 오류 발생: ', e);
+        }
+    },
+
+    async processUpload(platform) {
+        const fileInput = document.getElementById(`file-${platform}`);
+        if (!fileInput.files.length) {
+            alert('업로드할 파일을 하나 이상 선택해주세요.');
+            return;
+        }
+
+        const files = Array.from(fileInput.files);
+        
+        // ADMIN UPLOAD: Fetch ALL members across ALL guilds for global matching
+        const allActiveMembers = db.getMembers(); 
+        
+        const resultBox = document.getElementById('upload-result');
+        resultBox.classList.remove('hidden');
+        resultBox.innerHTML = `
+            <div class="p-6 bg-white rounded-xl border border-gray-200 flex items-center justify-center text-gray-500">
+                <i data-lucide="loader-2" class="w-5 h-5 animate-spin mr-2"></i> ${files.length}개 파일 전체 마스터 DB 파싱 중...
+            </div>
+        `;
+        lucide.createIcons();
+
+        try {
+            const result = await ExcelParser.parseMultipleFiles(files, platform, allActiveMembers);
+            
+            for (const [memberId, count] of Object.entries(result.memberDeliveries)) {
+                db.addDeliveriesToMember(memberId, count);
+            }
+
+            let unmatchedHtml = '';
+            if (result.unmatchedCount > 0) {
+                unmatchedHtml = `
+                    <div class="mt-4 p-4 bg-red-50 border border-red-100 rounded-md">
+                        <p class="text-sm font-medium text-red-800 mb-2"><i data-lucide="alert-triangle" class="w-4 h-4 inline mr-1"></i>매칭 실패 데이터 (${result.unmatchedCount}건)</p>
+                        <p class="text-xs text-red-600 mb-2">어느 길드에도 속하지 않은 유령 데이터입니다. 누락이 있다면 길드장에게 등록을 지시하세요.</p>
+                        <ul class="text-xs text-gray-700 list-disc pl-5">
+                            ${result.unmatchedSamples.map(u => `<li>${u.name || '이름없음'} (식별자: ${u.identifier})</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            resultBox.innerHTML = `
+                <div class="glass-panel p-6 rounded-xl border-l-4 border-l-green-500 shadow-sm">
+                    <div class="flex items-center text-green-700 mb-4">
+                        <i data-lucide="check-circle-2" class="w-6 h-6 mr-2"></i>
+                        <h4 class="text-lg font-bold">전체 자동 누적 완료</h4>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div class="bg-gray-50 p-3 rounded">
+                            <span class="text-gray-500 block mb-1">총 스캔된 엑셀 행(Row)</span>
+                            <span class="font-bold text-gray-900 text-lg">${result.totalRowsProcessed}건</span>
+                        </div>
+                        <div class="bg-blue-50 p-3 rounded">
+                            <span class="text-blue-600 block mb-1">길드원별 매칭 성공</span>
+                            <span class="font-bold text-blue-900 text-lg">+${result.matchedDeliveries}건 기존 데이터에 누적됨</span>
+                        </div>
+                    </div>
+                    ${unmatchedHtml}
+                    <div class="mt-6 flex justify-end">
+                        <button onclick="app.navigate('admin-overview')" class="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700">전체 길드 현황 보기</button>
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+            
+        } catch (error) {
+            resultBox.innerHTML = `
+                <div class="p-6 bg-red-50 border border-red-200 text-red-700 rounded-xl">
+                    <div class="font-bold mb-2">오류 발생</div>
+                    <div class="text-sm">${error.message || '파일을 읽을 수 없습니다. 양식을 확인해주세요.'}</div>
+                </div>
+            `;
+        }
+    }
+};
+
+// Start App
+document.addEventListener('DOMContentLoaded', () => {
+    window.app = app; // Make globally explicitly available
+    window.db = db;
+    app.init();
+});
