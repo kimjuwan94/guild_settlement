@@ -214,29 +214,9 @@ const app = {
 
         container.innerHTML = `
             ${noticeHtml}
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div class="glass-panel p-6 rounded-xl border border-gray-100">
-                    <div class="flex items-center text-gray-500 mb-2">
-                        <i data-lucide="users" class="w-5 h-5 mr-2 text-blue-500"></i>
-                        <span class="font-medium text-sm">현재 소속 인원 (길드장 포함)</span>
+                        <span class="font-bold text-xs md:text-sm">현재 예상 등급</span>
                     </div>
-                    <div class="text-3xl font-bold text-gray-900">${activeCount}<span class="text-lg font-normal text-gray-500 ml-1">명</span></div>
-                </div>
-
-                <div class="glass-panel p-6 rounded-xl border border-gray-100">
-                    <div class="flex items-center text-gray-500 mb-2">
-                        <i data-lucide="bike" class="w-5 h-5 mr-2 text-orange-500"></i>
-                        <span class="font-medium text-sm">주간 누적 배달건수</span>
-                    </div>
-                    <div class="text-3xl font-bold text-gray-900">${totalDeliveries.toLocaleString()}<span class="text-lg font-normal text-gray-500 ml-1">건</span></div>
-                </div>
-
-                <div class="glass-panel p-6 rounded-xl border border-gray-100 bg-gradient-to-br from-primary-50 to-white">
-                    <div class="flex items-center text-primary-700 mb-2">
-                        <i data-lucide="award" class="w-5 h-5 mr-2"></i>
-                        <span class="font-medium text-sm">현재 예상 등급</span>
-                    </div>
-                    <div class="text-3xl font-bold text-primary-700">${result.tier}</div>
+                    <div class="text-2xl md:text-3xl font-black text-primary-700">${result.tier}</div>
                 </div>
             </div>
 
