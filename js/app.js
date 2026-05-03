@@ -242,7 +242,7 @@ const app = {
                         <i data-lucide="award" class="w-4 h-4 md:w-5 md:h-5 mr-2"></i>
                         <span class="font-bold text-xs md:text-sm">현재 공식 등급</span>
                     </div>
-                    <div class="text-2xl md:text-3xl font-black text-primary-700">${db.getGuildById(guildId).tier || 'None'}</div>
+                    <div class="text-2xl md:text-3xl font-black text-primary-700">${db.getEffectiveTier(guildId)}</div>
                 </div>
             </div>
 

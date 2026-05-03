@@ -55,7 +55,8 @@ const db = {
                             allGuilds.push(g);
                         } else {
                             // 기존의 강제 고정 로직 삭제
-                            if (g.tier) existing.tier = g.tier;
+                            // 인원수 기반 자동 등급이 우선이므로 G_RECOVERED의 경우 서버 티어 무시
+                            if (g.id !== 'G_RECOVERED' && g.tier) existing.tier = g.tier;
                         }
                     });
                 }
