@@ -66,9 +66,37 @@ const ExcelParser = {
                     }
 
                     const worksheet = workbook.Sheets[sheetName];
-                    const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
                     
-                    console.log(`[Excel Debug] First row keys:`, json.length > 0 ? Object.keys(json[0]) : "Empty JSON");
+                    // ✅ 제목 행(Header Row) 자동 찾기 로직
+                    // 첫 20행을 뒤져서 '성함'이나 '라이더명', '이름'이 있는 행을 헤더로 설정
+                    const range = XLSX.utils.decode_range(worksheet['!ref']);
+                    let headerRowIndex = 0;
+                    for (let r = 0; r <= Math.min(20, range.e.r); r++) {
+                        let isHeader = false;
+                        for (let c = range.s.c; c <= range.e.c; c++) {
+                            const cell = worksheet[XLSX.utils.encode_cell({r, c})];
+                            if (cell && cell.v) {
+                                const val = cell.v.toString().replace(/\s/g, '');
+                                if (['성함', '라이더명', '이름', '기사명', '라이더ID', 'UserID'].some(k => val.includes(k))) {
+                                    isHeader = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (isHeader) {
+                            headerRowIndex = r;
+                            break;
+                        }
+                    }
+
+                    // 찾은 헤더 행부터 데이터를 읽음
+                    const json = XLSX.utils.sheet_to_json(worksheet, { 
+                        defval: "",
+                        range: headerRowIndex 
+                    });
+                    
+                    console.log(`[Excel Debug] Header row found at index: ${headerRowIndex}`);
+                    console.log(`[Excel Debug] Sample row data:`, json.length > 0 ? json[0] : "No Data");
                     
                     let matchedDeliveries = 0;
                     let unmatchedRecords = [];
