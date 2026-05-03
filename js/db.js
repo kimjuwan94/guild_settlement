@@ -7,23 +7,25 @@ const db = {
             { id: 'G_RECOVERED', name: '김해플로체', gmName: '김현제', username: '김현제', password: '4858', createdAt: '2026-05-03', tier: 'Gold' }
         ],
         members: [
-            { id: 'MR01', guildId: 'G_RECOVERED', name: '안재철', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR02', guildId: 'G_RECOVERED', name: '최정윤', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR03', guildId: 'G_RECOVERED', name: '오영택', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR04', guildId: 'G_RECOVERED', name: '박은규', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR05', guildId: 'G_RECOVERED', name: '강민효', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR06', guildId: 'G_RECOVERED', name: '방재진', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR07', guildId: 'G_RECOVERED', name: '김효식', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR08', guildId: 'G_RECOVERED', name: '송광정', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR09', guildId: 'G_RECOVERED', name: '김문수', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR10', guildId: 'G_RECOVERED', name: '양형진', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR11', guildId: 'G_RECOVERED', name: '김태영', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR01', guildId: 'G_RECOVERED', name: '안재철', baeminId: 'qpfwpqnq', coupangPhone: '4774', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR02', guildId: 'G_RECOVERED', name: '최정윤', baeminId: 'jungyoon1853', coupangPhone: '6982', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR03', guildId: 'G_RECOVERED', name: '오영택', baeminId: 'liv2107', coupangPhone: '9962', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR04', guildId: 'G_RECOVERED', name: '박은규', baeminId: 'qlghdidi', coupangPhone: '3935', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR05', guildId: 'G_RECOVERED', name: '강민효', baeminId: 'rkdalsgy12', coupangPhone: '1056', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR06', guildId: 'G_RECOVERED', name: '방재진', baeminId: 'bmwbyc5414', coupangPhone: '4548', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR07', guildId: 'G_RECOVERED', name: '김효식', baeminId: 'gytlr', coupangPhone: '6797', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR08', guildId: 'G_RECOVERED', name: '송광정', baeminId: '', coupangPhone: '5222', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR09', guildId: 'G_RECOVERED', name: '김문수', baeminId: 'babb1397', coupangPhone: '1551', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR10', guildId: 'G_RECOVERED', name: '양형진', baeminId: 'gudwls1823', coupangPhone: '1823', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR11', guildId: 'G_RECOVERED', name: '김태영', baeminId: 'ftyc8008', coupangPhone: '0850', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
             { id: 'MR12', guildId: 'G_RECOVERED', name: '김현제', baeminId: '', coupangPhone: '5951', deliveries: 0, status: 'approved', createdAt: '2026-05-03' }
         ],
         settlements: [],
         globalNotice: "",
         upgradeRequests: [], // { guildId, currentTier, requestedTier, status: 'pending'|'approved'|'rejected', createdAt }
-        registrationHistory: [] // [{ type: 'member_add'|'guild_add', guildId, name, timestamp, details }]
+        registrationHistory: [
+            { type: 'system_recovery', guildId: 'G_RECOVERED', name: '시스템 복구', timestamp: new Date().toISOString(), details: '김해플로체 12명 명단 및 상세 정보(배민/쿠팡) 일괄 복구 완료' }
+        ] // [{ type: 'member_add'|'guild_add', guildId, name, timestamp, details }]
     },
 
     _memoryData: null,
@@ -70,8 +72,10 @@ const db = {
                             return; 
                         }
 
-                        // 이름 또는 ID로 기존 멤버 찾기 (12인 명단 복구를 위해 이름 매칭 우선)
-                        const existing = allMembers.find(am => am.name === m.name || am.id === m.id);
+                        // 이름 또는 ID로 기존 멤버 찾기 (공백 제거 후 매칭하여 정확도 향상)
+                        const cleanMName = m.name ? m.name.trim() : '';
+                        const existing = allMembers.find(am => (am.name && am.name.trim() === cleanMName) || am.id === m.id);
+                        
                         if (!existing) {
                             allMembers.push(m);
                         } else {
@@ -279,14 +283,14 @@ const db = {
         member.status = 'approved'; // simplified: auto approve for now
         data.members.push(member);
 
-        // Record history
+        // Record history (상세 정보 포함하여 영구 기록)
         if (!data.registrationHistory) data.registrationHistory = [];
         data.registrationHistory.push({
             type: 'member_add',
             guildId: guildId,
             name: member.name,
             timestamp: new Date().toISOString(),
-            details: `Member added to guild ${guildId}`
+            details: `신규 등록 [배민:${member.baeminId || '-'}] [쿠팡:${member.coupangPhone || '-'}] [메모:${member.memo || '-'}]`
         });
 
         this.saveData(data);
@@ -299,14 +303,14 @@ const db = {
         if (member) {
             Object.assign(member, updatedFields);
             
-            // Record history
+            // Record history (수정된 상세 정보 영구 기록)
             if (!data.registrationHistory) data.registrationHistory = [];
             data.registrationHistory.push({
                 type: 'member_update',
                 guildId: member.guildId,
                 name: member.name,
                 timestamp: new Date().toISOString(),
-                details: `Member info updated: ${member.name}`
+                details: `정보 수정 [배민:${member.baeminId || '-'}] [쿠팡:${member.coupangPhone || '-'}] [메모:${member.memo || '-'}]`
             });
 
             this.saveData(data);

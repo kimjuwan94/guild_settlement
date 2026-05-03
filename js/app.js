@@ -507,7 +507,7 @@ const app = {
                         </h3>
                         <p class="text-xs text-gray-500 mt-1 italic">현재 인원: ${members.length}명 / 등급별 자동 조건 적용됨</p>
                     </div>
-                    <button type="button" onclick="window.app.showAddMemberModal()" class="inline-flex items-center justify-center px-5 py-2.5 bg-primary-600 text-white text-sm font-bold rounded-xl hover:bg-primary-700 transition-all shadow-lg hover:shadow-primary-200 active:scale-95">
+                    <button type="button" onclick="app.showAddMemberModal()" class="inline-flex items-center justify-center px-5 py-2.5 bg-primary-600 text-white text-sm font-bold rounded-xl hover:bg-primary-700 transition-all shadow-lg hover:shadow-primary-200 active:scale-95">
                         <i data-lucide="plus" class="w-4 h-4 mr-2"></i> 길드원 직접 추가
                     </button>
                 </div>
@@ -1313,7 +1313,10 @@ const app = {
 
             db.addMember(guildId, { name, baeminId, coupangPhone, memo });
             document.getElementById('add-modal').classList.add('hidden');
+            
+            // 기록이 남도록 명단 즉시 갱신
             this.renderMembers(document.getElementById('app-content'));
+            console.log(`[Success] Member added: ${name}`);
         } catch (error) {
             alert(error.message);
         }
