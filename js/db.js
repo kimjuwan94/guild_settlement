@@ -282,6 +282,28 @@ const db = {
         return member;
     },
 
+    updateMember(id, updatedFields) {
+        const data = this.getData();
+        const member = data.members.find(m => m.id === id);
+        if (member) {
+            Object.assign(member, updatedFields);
+            
+            // Record history
+            if (!data.registrationHistory) data.registrationHistory = [];
+            data.registrationHistory.push({
+                type: 'member_update',
+                guildId: member.guildId,
+                name: member.name,
+                timestamp: new Date().toISOString(),
+                details: `Member info updated: ${member.name}`
+            });
+
+            this.saveData(data);
+            return true;
+        }
+        return false;
+    },
+
     deleteMember(id) {
         const data = this.getData();
         data.members = data.members.filter(m => m.id !== id);

@@ -488,7 +488,10 @@ const app = {
                 <td class="py-3 px-4 text-sm text-gray-700 font-mono">${m.coupangPhone || '-'}</td>
                 <td class="py-3 px-4 text-sm font-bold text-blue-600">${(m.deliveries || 0).toLocaleString()}건</td>
                 <td class="py-3 px-4 text-sm text-right">
-                    <button type="button" onclick="app.deleteMember('${m.id}')" class="text-red-500 hover:text-red-700 text-xs font-semibold px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors">삭제</button>
+                    <div class="flex items-center justify-end space-x-2">
+                        <button type="button" onclick="app.showEditMemberModal('${m.id}')" class="text-blue-500 hover:text-blue-700 text-xs font-semibold px-2 py-1 rounded border border-blue-200 hover:bg-blue-50 transition-colors">수정</button>
+                        <button type="button" onclick="app.deleteMember('${m.id}')" class="text-red-500 hover:text-red-700 text-xs font-semibold px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors">삭제</button>
+                    </div>
                 </td>
             </tr>
         `).join('');
@@ -522,6 +525,7 @@ const app = {
                 </div>
             </div>
 
+            <!-- Add Member Modal -->
             <div id="add-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
                 <div class="glass-panel w-full max-w-md p-6 rounded-xl shadow-xl">
                     <h3 class="text-lg font-semibold mb-4 border-b pb-2">신규 길드원 등록</h3>
@@ -547,6 +551,38 @@ const app = {
                         <div class="mt-6 flex justify-end space-x-3">
                             <button type="button" onclick="document.getElementById('add-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
                             <button type="submit" class="px-4 py-2 text-sm text-white bg-primary-600 rounded-md hover:bg-primary-700">저장</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Edit Member Modal -->
+            <div id="edit-member-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+                <div class="glass-panel w-full max-w-md p-6 rounded-xl shadow-xl">
+                    <h3 class="text-lg font-semibold mb-4 border-b pb-2 text-blue-800">길드원 정보 수정</h3>
+                    <form id="edit-member-form" onsubmit="app.handleUpdateMember(event)">
+                        <input type="hidden" id="edit-m-id">
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">이름</label>
+                                <input type="text" id="edit-m-name" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">배민 커넥트 ID</label>
+                                <input type="text" id="edit-m-baemin" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">쿠팡이츠 뒷자리</label>
+                                <input type="text" id="edit-m-coupang" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">메모/비고</label>
+                                <input type="text" id="edit-m-memo" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-yellow-50">
+                            </div>
+                        </div>
+                        <div class="mt-6 flex justify-end space-x-3">
+                            <button type="button" onclick="document.getElementById('edit-member-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
+                            <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700">변경사항 저장</button>
                         </div>
                     </form>
                 </div>
@@ -1240,6 +1276,38 @@ const app = {
         db.addMember(guildId, { name, baeminId, coupangPhone, memo });
         document.getElementById('add-modal').classList.add('hidden');
         this.renderMembers(document.getElementById('app-content'));
+    },
+
+    showEditMemberModal(id) {
+        const member = db.getMembers().find(m => m.id === id);
+        if (!member) return;
+
+        document.getElementById('edit-m-id').value = id;
+        document.getElementById('edit-m-name').value = member.name;
+        document.getElementById('edit-m-baemin').value = member.baeminId || '';
+        document.getElementById('edit-m-coupang').value = member.coupangPhone || '';
+        document.getElementById('edit-m-memo').value = member.memo || '';
+        
+        document.getElementById('edit-member-modal').classList.remove('hidden');
+    },
+
+    handleUpdateMember(e) {
+        e.preventDefault();
+        const id = document.getElementById('edit-m-id').value;
+        const name = document.getElementById('edit-m-name').value.trim();
+        const baeminId = document.getElementById('edit-m-baemin').value.trim();
+        const coupangPhone = document.getElementById('edit-m-coupang').value.trim();
+        const memo = document.getElementById('edit-m-memo').value.trim();
+
+        if (name === '') {
+            alert('이름을 입력해주세요.');
+            return;
+        }
+
+        db.updateMember(id, { name, baeminId, coupangPhone, memo });
+        document.getElementById('edit-member-modal').classList.add('hidden');
+        this.renderMembers(document.getElementById('app-content'));
+        alert('길드원 정보가 수정되었습니다.');
     },
 
     deleteMember(id) {
