@@ -50,15 +50,25 @@ const ExcelParser = {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
                     
+                    // 시트 목록 디버깅 로그
+                    console.log(`[Excel Debug] Sheets found:`, workbook.SheetNames);
+
                     // 쿠팡: '오더별 상세내역' 시트 우선 탐색, 없으면 첫 번째 시트 사용
                     let sheetName = workbook.SheetNames[0];
                     if (platform === 'coupang') {
-                        const coupangSheet = workbook.SheetNames.find(n => n.includes('오더별') || n.includes('상세내역') || n.includes('주문'));
-                        if (coupangSheet) sheetName = coupangSheet;
+                        const coupangSheet = workbook.SheetNames.find(n => n.includes('오더별') || n.includes('상세내역') || n.includes('주문') || n.includes('Order'));
+                        if (coupangSheet) {
+                            sheetName = coupangSheet;
+                            console.log(`[Excel Debug] Target Coupang sheet selected: ${sheetName}`);
+                        } else {
+                            console.log(`[Excel Debug] Coupang sheet not found by keyword, using first sheet: ${sheetName}`);
+                        }
                     }
 
                     const worksheet = workbook.Sheets[sheetName];
                     const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                    
+                    console.log(`[Excel Debug] First row keys:`, json.length > 0 ? Object.keys(json[0]) : "Empty JSON");
                     
                     let matchedDeliveries = 0;
                     let unmatchedRecords = [];
