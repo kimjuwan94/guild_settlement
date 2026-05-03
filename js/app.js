@@ -107,6 +107,7 @@ const app = {
         document.getElementById('nav-upload').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
         document.getElementById('nav-admin-overview').style.display = isAdmin ? 'flex' : 'none';
         document.getElementById('nav-admin-history').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
+        document.getElementById('nav-admin-history-log').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
         document.getElementById('nav-admin-approvals').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
 
         // Switch Account Buttons
@@ -162,6 +163,10 @@ const app = {
             case 'admin-approvals':
                 titleArea.innerText = '신규 길드원 가입 승인 (Admin)';
                 this.renderAdminApprovals(contentArea);
+                break;
+            case 'admin-history-log':
+                titleArea.innerText = '전체 시스템 등록 현황 및 이력 (Admin)';
+                this.renderRegistrationHistory(contentArea);
                 break;
         }
     },
@@ -578,7 +583,7 @@ const app = {
                         </div>
                         <h3 class="text-lg font-bold text-gray-800">배민 엑셀 업로드</h3>
                     </div>
-                    <input type="file" id="baemin-files" multiple accept=".xlsx, .xls" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 mb-4 cursor-pointer">
+                    <input type="file" id="file-baemin" multiple accept=".xlsx, .xls" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 mb-4 cursor-pointer">
                     <button onclick="app.processUpload('baemin')" class="w-full py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-all flex items-center justify-center">
                         <i data-lucide="zap" class="w-4 h-4 mr-2"></i> 파일 일괄 파싱 및 누적
                     </button>
@@ -593,7 +598,7 @@ const app = {
                         </div>
                         <h3 class="text-lg font-bold text-gray-800">쿠팡 엑셀 업로드</h3>
                     </div>
-                    <input type="file" id="coupang-files" multiple accept=".xlsx, .xls" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 mb-4 cursor-pointer">
+                    <input type="file" id="file-coupang" multiple accept=".xlsx, .xls" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 mb-4 cursor-pointer">
                     <button onclick="app.processUpload('coupang')" class="w-full py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-all flex items-center justify-center">
                         <i data-lucide="zap" class="w-4 h-4 mr-2"></i> 파일 일괄 파싱 및 누적
                     </button>
@@ -635,9 +640,14 @@ const app = {
                     <td class="py-3 px-4 text-sm font-medium text-primary-700 text-center">${settlement.tier}</td>
                     <td class="py-3 px-4 text-sm text-right font-bold text-gray-900">${settlement.totalAmount.toLocaleString()}원</td>
                     <td class="py-3 px-4 text-sm text-center">
-                        <button onclick="app.switchToGuild('${g.id}')" class="px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 font-bold text-xs flex items-center justify-center mx-auto transition-colors">
-                            <i data-lucide="log-in" class="w-3 h-3 mr-1"></i> 접속
-                        </button>
+                        <div class="flex items-center justify-center space-x-2">
+                            <button onclick="app.switchToGuild('${g.id}')" class="px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 font-bold text-xs flex items-center transition-colors">
+                                <i data-lucide="log-in" class="w-3 h-3 mr-1"></i> 접속
+                            </button>
+                            <button onclick="app.handleDeleteGuild('${g.id}', '${g.name}')" class="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 font-bold text-xs flex items-center transition-colors">
+                                <i data-lucide="trash-2" class="w-3 h-3 mr-1"></i> 삭제
+                            </button>
+                        </div>
                     </td>
                 </tr>
             `;
@@ -712,16 +722,6 @@ const app = {
                                 <label class="block text-sm font-medium text-gray-700 mb-1">길드장(GM) 이름</label>
                                 <input type="text" id="g-gmname" required placeholder="예: 김길동" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
                             </div>
-                            <div class="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">정산 은행명 <span class="text-xs font-normal">(선택)</span></label>
-                                    <input type="text" id="g-bankname" placeholder="국민은행" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50">
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">계좌번호 <span class="text-xs font-normal">(선택)</span></label>
-                                    <input type="text" id="g-account" placeholder="- 없이 입력" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50">
-                                </div>
-                            </div>
                             <p class="text-xs text-gray-500">※ 생성 완료 시 접속용 아이디와 임시 비밀번호가 자동 발급됩니다.</p>
                         </div>
                         <div class="mt-6 flex justify-end space-x-3">
@@ -746,16 +746,6 @@ const app = {
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">새 비밀번호</label>
                                 <input type="text" id="edit-g-pw-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            </div>
-                            <div class="grid grid-cols-2 gap-3 mt-2">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">정산 은행명</label>
-                                    <input type="text" id="edit-g-bankname-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">계좌번호</label>
-                                    <input type="text" id="edit-g-account-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50">
-                                </div>
                             </div>
                         </div>
                         <div class="mt-6 flex justify-end space-x-3">
@@ -997,6 +987,68 @@ const app = {
         lucide.createIcons();
     },
 
+    renderRegistrationHistory(container) {
+        if (this.state.currentUser.role !== 'admin') return;
+        
+        const history = (db.getData().registrationHistory || []).reverse();
+        const guilds = db.getGuilds();
+
+        if (history.length === 0) {
+            container.innerHTML = `
+                <div class="glass-panel rounded-xl border border-gray-100 p-12 text-center">
+                    <i data-lucide="scroll-text" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">등록 이력이 없습니다</h3>
+                    <p class="text-sm text-gray-500">길드 또는 길드원 등록이 발생하면 이곳에 기록됩니다.</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+
+        let rows = history.map(item => {
+            const guild = guilds.find(g => g.id === item.guildId);
+            const typeBadge = item.type === 'guild_add' 
+                ? '<span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-bold">길드 생성</span>'
+                : '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">멤버 추가</span>';
+            
+            return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="py-3 px-4 text-xs text-gray-500">${new Date(item.timestamp).toLocaleString()}</td>
+                    <td class="py-3 px-4">${typeBadge}</td>
+                    <td class="py-3 px-4 text-sm font-bold text-gray-800">${item.name}</td>
+                    <td class="py-3 px-4 text-sm text-gray-600">${guild ? guild.name : '알 수 없음'}</td>
+                    <td class="py-3 px-4 text-xs text-gray-400 italic">${item.details || '-'}</td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="glass-panel rounded-xl border border-gray-100 p-6 shadow-sm">
+                <div class="mb-6 border-b pb-4">
+                    <h3 class="text-lg font-semibold text-gray-800">시스템 전체 등록 타임라인</h3>
+                    <p class="text-xs text-gray-500 mt-1">누락된 데이터를 추적하고 모든 변경 사항을 투명하게 관리하기 위한 이력 로그입니다.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                <th class="py-3 px-4 font-semibold">발생 시각</th>
+                                <th class="py-3 px-4 font-semibold">유형</th>
+                                <th class="py-3 px-4 font-semibold">대상명</th>
+                                <th class="py-3 px-4 font-semibold">소속 길드</th>
+                                <th class="py-3 px-4 font-semibold">상세 내용</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
+    },
+
     // --- Actions ---
 
     showSwitchModal() {
@@ -1059,12 +1111,10 @@ const app = {
         }
     },
 
-    promptEditAccount(guildId, currentUsername, currentPassword, currentBank, currentAccount) {
+    promptEditAccount(guildId, currentUsername, currentPassword) {
         document.getElementById('edit-g-id').value = guildId;
         document.getElementById('edit-g-id-input').value = currentUsername;
         document.getElementById('edit-g-pw-input').value = currentPassword;
-        document.getElementById('edit-g-bankname-input').value = currentBank || '';
-        document.getElementById('edit-g-account-input').value = currentAccount || '';
         document.getElementById('admin-edit-modal').classList.remove('hidden');
     },
 
@@ -1073,30 +1123,34 @@ const app = {
         const guildId = document.getElementById('edit-g-id').value;
         const newId = document.getElementById('edit-g-id-input').value.trim();
         const newPw = document.getElementById('edit-g-pw-input').value.trim();
-        const newBank = document.getElementById('edit-g-bankname-input').value.trim();
-        const newAcc = document.getElementById('edit-g-account-input').value.trim();
 
         if (newId === '') {
             alert('아이디를 입력해주세요.');
             return;
         }
 
-        db.updateGuild(guildId, newId, newPw, newBank, newAcc);
+        db.updateGuild(guildId, newId, newPw);
         document.getElementById('admin-edit-modal').classList.add('hidden');
         this.renderAdmin(document.getElementById('app-content'));
-        alert('계정 및 계좌 정보가 성공적으로 변경되었습니다.');
+        alert('계정 정보가 성공적으로 변경되었습니다.');
     },
 
     addGuild(e) {
         e.preventDefault();
         const name = document.getElementById('g-name').value;
         const gmName = document.getElementById('g-gmname').value;
-        const bankName = document.getElementById('g-bankname').value.trim();
-        const accountNumber = document.getElementById('g-account').value.trim();
         
-        db.createGuild(name, gmName, bankName, accountNumber);
+        db.createGuild(name, gmName);
         document.getElementById('admin-add-modal').classList.add('hidden');
         this.renderAdmin(document.getElementById('app-content'));
+    },
+
+    handleDeleteGuild(guildId, guildName) {
+        if (confirm(`[${guildName}] 길드를 정말 삭제하시겠습니까?\n삭제 시 해당 길드의 모든 멤버 데이터도 함께 영구 삭제되며 복구할 수 없습니다.`)) {
+            db.deleteGuild(guildId);
+            alert(`[${guildName}] 길드가 삭제되었습니다.`);
+            this.renderAdmin(document.getElementById('app-content'));
+        }
     },
 
     saveNotice() {

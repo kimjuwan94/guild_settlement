@@ -1,29 +1,17 @@
-const db = {
+﻿const db = {
     _key: 'guild_sys_data_v3',
     
     _defaultData: {
         currentWeekId: null, // "YYYY-MM-DD" of the most recent Wednesday
         guilds: [
-            { id: 'G_RECOVERED', name: '김해플로체', gmName: '김현제', username: '김현제', password: '4858', createdAt: '2026-05-03', tier: 'Gold' }
+            { id: 'G001', name: '?뚯뒪??湲몃뱶', gmName: '?뚯뒪??湲몃뱶??, username: 'gm_g001', password: '1234', createdAt: '2023-10-01' }
         ],
         members: [
-            { id: 'MR01', guildId: 'G_RECOVERED', name: '안재철', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR02', guildId: 'G_RECOVERED', name: '최정윤', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR03', guildId: 'G_RECOVERED', name: '오영택', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR04', guildId: 'G_RECOVERED', name: '박은규', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR05', guildId: 'G_RECOVERED', name: '강민효', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR06', guildId: 'G_RECOVERED', name: '방재진', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR07', guildId: 'G_RECOVERED', name: '김효식', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR08', guildId: 'G_RECOVERED', name: '송광정', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR09', guildId: 'G_RECOVERED', name: '김문수', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR10', guildId: 'G_RECOVERED', name: '양형진', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR11', guildId: 'G_RECOVERED', name: '김태영', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR12', guildId: 'G_RECOVERED', name: '김현제', baeminId: '', coupangPhone: '5951', deliveries: 0, status: 'approved', createdAt: '2026-05-03' }
+            { id: 'M001', guildId: 'G001', name: '?띻만??, baeminId: 'hong123', coupangPhone: '1234', deliveries: 0, createdAt: '2023-10-01' },
+            { id: 'M002', guildId: 'G001', name: '源泥좎닔', baeminId: 'kim456', coupangPhone: '5678', deliveries: 0, createdAt: '2023-10-05' },
         ],
         settlements: [],
-        globalNotice: "",
-        upgradeRequests: [], // { guildId, currentTier, requestedTier, status: 'pending'|'approved'|'rejected', createdAt }
-        registrationHistory: [] // [{ type: 'member_add'|'guild_add', guildId, name, timestamp, details }]
+        globalNotice: ""
     },
 
     _memoryData: null,
@@ -31,77 +19,45 @@ const db = {
 
     async loadFromServer() {
         try {
-            // 1. 서버(Firebase)와 로컬(LocalStorage) 데이터 모두 가져오기
-            const response = await fetch(this._firebaseUrl);
+            // 1. Firebase?먯꽌 ?곗씠??媛?몄삤湲?            const response = await fetch(this._firebaseUrl);
             const cloudData = await response.json();
+
             const localDataStr = localStorage.getItem(this._key);
-            const localData = localDataStr ? JSON.parse(localDataStr) : null;
+            let localData = null;
+            if (localDataStr) {
+                localData = JSON.parse(localDataStr);
+            }
 
-            // 2. 기본 데이터 구조 준비
-            let finalData = { ...this._defaultData };
-
-            // 3. 지능적 데이터 병합 (서버 + 로컬 + 기본복구데이터)
-            const sourceData = cloudData || localData || this._defaultData;
-            finalData = { ...finalData, ...sourceData };
-
-            // 길드 병합
-            const allGuilds = [...this._defaultData.guilds];
-            [cloudData, localData].forEach(d => {
-                if (d && d.guilds) {
-                    d.guilds.forEach(g => {
-                        if (!allGuilds.find(ag => ag.id === g.id)) allGuilds.push(g);
-                    });
+            if (cloudData) {
+                // Firebase???곗씠?곌? ?덉쑝硫??대씪?곕뱶 ?곗씠?곕? 理쒖슦?좎쑝濡??ъ슜
+                this._memoryData = { ...this._defaultData, ...cloudData };
+                
+                // 留뚯빟 濡쒖뺄?먮뒗 ?덈뒗???대씪?곕뱶媛 嫄곗쓽 鍮꾩뼱?덈뒗 珥덇린 ?곹깭?쇰㈃ 濡쒖뺄 ?곗씠?곕? 諛?대꽔湲?(留덉씠洹몃젅?댁뀡)
+                if (localData && (!cloudData.guilds || cloudData.guilds.length === 0)) {
+                    console.log('Migrating local data to Firebase...');
+                    this._memoryData = { ...this._defaultData, ...localData };
+                    this.saveData(this._memoryData);
+                } else {
+                    // ?대씪?곕뱶 ?곗씠?곕? 濡쒖뺄??諛깆뾽
+                    localStorage.setItem(this._key, JSON.stringify(this._memoryData));
                 }
-            });
-            finalData.guilds = allGuilds;
-
-            // 멤버 및 실적 병합 (최고 실적 선택)
-            const allMembers = [...this._defaultData.members];
-            [cloudData, localData].forEach(d => {
-                if (d && d.members) {
-                    d.members.forEach(m => {
-                        // 김해플로체(복구길드)의 기존 잘못된 멤버가 다시 섞이지 않도록 방지
-                        if (m.guildId === 'G_RECOVERED' && !this._defaultData.members.find(dm => dm.name === m.name)) {
-                            return; 
-                        }
-
-                        const existing = allMembers.find(am => am.id === m.id);
-                        if (!existing) {
-                            allMembers.push(m);
-                        } else {
-                            existing.deliveries = Math.max(existing.deliveries || 0, m.deliveries || 0);
-                            if (m.tier) existing.tier = m.tier; // 등급 정보 보존
-                        }
-                    });
+            } else {
+                // Firebase媛 ??鍮꾩뼱?덉쓬 (理쒖큹 ?앹꽦)
+                if (localData) {
+                    console.log('Migrating local data to empty Firebase...');
+                    this._memoryData = { ...this._defaultData, ...localData };
+                } else {
+                    this._memoryData = { ...this._defaultData };
                 }
-            });
-            finalData.members = allMembers;
-
-            // 정산 내역 병합 (중복 제거)
-            const allSettlements = [...(this._defaultData.settlements || [])];
-            [cloudData, localData].forEach(d => {
-                if (d && d.settlements) {
-                    d.settlements.forEach(s => {
-                        if (!allSettlements.find(as => as.id === s.id)) allSettlements.push(s);
-                    });
-                }
-            });
-            finalData.settlements = allSettlements;
-
-            this._memoryData = finalData;
-            
-            // 4. 합본을 양쪽에 다시 저장 (복구 및 동기화)
-            localStorage.setItem(this._key, JSON.stringify(this._memoryData));
-            if (this._memoryData.guilds.length > 0) {
                 this.saveData(this._memoryData);
             }
         } catch (e) {
-            console.error('Data load failed, falling back to local storage:', e);
-            const localDataStr = localStorage.getItem(this._key);
-            if (localDataStr) {
-                this._memoryData = { ...this._defaultData, ...JSON.parse(localDataStr) };
+            console.error('Firebase load failed, falling back to local storage:', e);
+            const localData = localStorage.getItem(this._key);
+            if (localData) {
+                this._memoryData = { ...this._defaultData, ...JSON.parse(localData) };
             } else {
-                this._memoryData = { ...this._defaultData };
+                this._memoryData = this._defaultData;
             }
         }
     },
@@ -116,21 +72,20 @@ const db = {
     saveData(data) {
         this._memoryData = data;
         
-        // 1. 로컬 백업 저장 (오프라인/에러 대비)
+        // 1. 濡쒖뺄 諛깆뾽 ???(?ㅽ봽?쇱씤/?먮윭 ?鍮?
         try {
             localStorage.setItem(this._key, JSON.stringify(data));
         } catch (e) {
             console.error('Local storage save failed:', e);
         }
 
-        // 2. Firebase 실시간 동기화
-        fetch(this._firebaseUrl, {
-            method: 'PUT', // 덮어쓰기
+        // 2. Firebase ?ㅼ떆媛??숆린??        fetch(this._firebaseUrl, {
+            method: 'PUT', // ??뼱?곌린
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         }).catch(e => {
             console.error('Firebase save failed:', e);
-            alert('클라우드 동기화 실패! 인터넷 연결을 확인해주세요.');
+            alert('?대씪?곕뱶 ?숆린???ㅽ뙣! ?명꽣???곌껐???뺤씤?댁＜?몄슂.');
         });
     },
 
@@ -176,17 +131,6 @@ const db = {
             createdAt: new Date().toISOString().split('T')[0]
         };
         data.guilds.push(newGuild);
-
-        // Record history
-        if (!data.registrationHistory) data.registrationHistory = [];
-        data.registrationHistory.push({
-            type: 'guild_add',
-            guildId: generatedId,
-            name: name,
-            timestamp: new Date().toISOString(),
-            details: `Admin created guild: ${name}`
-        });
-
         this.saveData(data);
         return newGuild;
     },
@@ -205,19 +149,6 @@ const db = {
         return false;
     },
 
-    deleteGuild(guildId) {
-        const data = this.getData();
-        // 1. 길드 삭제
-        data.guilds = data.guilds.filter(g => g.id !== guildId);
-        // 2. 해당 길드 소속 멤버 삭제 (연쇄 삭제)
-        data.members = data.members.filter(m => m.guildId !== guildId);
-        // 3. (선택사항) 해당 길드의 정산 내역도 삭제할 수 있음
-        // data.settlements = data.settlements.filter(s => s.guildId !== guildId);
-        
-        this.saveData(data);
-        return true;
-    },
-
     // --- Notices ---
     getNotice() {
         return this.getData().globalNotice || "";
@@ -232,7 +163,7 @@ const db = {
     // --- Member Methods ---
     getMembers(guildId = null) {
         const members = this.getData().members.map(m => {
-            // 기존 데이터 호환: status가 없으면 기본적으로 'approved'
+            // 湲곗〈 ?곗씠???명솚: status媛 ?놁쑝硫?湲곕낯?곸쑝濡?'approved'
             m.status = m.status || 'approved';
             return m;
         });
@@ -245,39 +176,13 @@ const db = {
 
     addMember(guildId, member) {
         const data = this.getData();
-        const guild = this.getGuildById(guildId);
-        
-        // 1. 등급별 인원 제한 체크 (None: 9명, Bronze: 10명, Silver: 15명, Gold: 20명)
-        const currentCount = this.getHeadcountForGuild(guildId);
-        const tier = guild.tier || 'None';
-        let maxLimit = 9; // None
-        if (tier === 'Bronze') maxLimit = 10;
-        if (tier === 'Silver') maxLimit = 15;
-        if (tier === 'Gold') maxLimit = 20;
-
-        if (currentCount >= maxLimit) {
-            throw new Error(`현재 길드 등급(${tier})의 최대 인원(${maxLimit}명)에 도달했습니다. 더 추가하려면 본사에 승급을 요청하세요.`);
-        }
-
         const count = data.members.length + 1;
         member.id = 'M' + String(count).padStart(3, '0');
         member.guildId = guildId;
         member.deliveries = 0; // Initialize deliveries
         member.createdAt = new Date().toISOString().split('T')[0];
-        member.memo = member.memo || ''; // 추가된 메모 필드
-        member.status = 'approved'; // simplified: auto approve for now
-        data.members.push(member);
-
-        // Record history
-        if (!data.registrationHistory) data.registrationHistory = [];
-        data.registrationHistory.push({
-            type: 'member_add',
-            guildId: guildId,
-            name: member.name,
-            timestamp: new Date().toISOString(),
-            details: `Member added to guild ${guildId}`
-        });
-
+        member.memo = member.memo || ''; // 異붽???硫붾え ?꾨뱶
+        member.status = 'pending'; // ?덈줈 異붽???湲몃뱶?먯? ?뱀씤 ?湲?        data.members.push(member);
         this.saveData(data);
         return member;
     },
@@ -318,15 +223,15 @@ const db = {
     },
 
     getHeadcountForGuild(guildId) {
-        // 인원수는 'approved' 상태인 멤버만 집계
+        // ?몄썝?섎뒗 'approved' ?곹깭??硫ㅻ쾭留?吏묎퀎
         const members = this.getMembers(guildId).filter(m => m.status === 'approved');
         const guild = this.getGuildById(guildId);
         if (!guild) return members.length;
         
-        // 길드장이 승인된 멤버 리스트에 이미 등록되어 있는지 확인 (공백 무시)
+        // 湲몃뱶?μ씠 ?뱀씤??硫ㅻ쾭 由ъ뒪?몄뿉 ?대? ?깅줉?섏뼱 ?덈뒗吏 ?뺤씤 (怨듬갚 臾댁떆)
         const isGmInList = members.some(m => m.name.replace(/\s/g,'') === guild.gmName.replace(/\s/g,''));
         
-        // 멤버 수 + (길드장이 등록 안되어 있으면 1명 추가)
+        // 硫ㅻ쾭 ??+ (湲몃뱶?μ씠 ?깅줉 ?덈릺???덉쑝硫?1紐?異붽?)
         return members.length + (isGmInList ? 0 : 1);
     },
 
@@ -356,7 +261,7 @@ const db = {
         tuesdayDateObj.setDate(tuesdayDateObj.getDate() + 6);
         const endStr = this.formatDate(tuesdayDateObj);
         
-        return `${startStr}(수) ~ ${endStr}(화) 정산`;
+        return `${startStr}(?? ~ ${endStr}(?? ?뺤궛`;
     },
 
     checkAndAutoFinalize(settlementEngine) {
@@ -408,8 +313,8 @@ const db = {
     _runFinalization(data, weekName, settlementEngine) {
         // Calculate settlement for each guild and save to history
         data.guilds.forEach(guild => {
-            // 정산 시 'approved' 상태인 멤버의 실적만 가져오지만, 애초에 parser에서 매칭을 거부하므로 deliveries는 0일 것임.
-            // 안전을 위해 getMembers(guild.id).filter 활용 (데이터 일관성 보장)
+            // ?뺤궛 ??'approved' ?곹깭??硫ㅻ쾭???ㅼ쟻留?媛?몄삤吏留? ?좎큹??parser?먯꽌 留ㅼ묶??嫄곕??섎?濡?deliveries??0??寃껋엫.
+            // ?덉쟾???꾪빐 getMembers(guild.id).filter ?쒖슜 (?곗씠???쇨???蹂댁옣)
             const guildMembers = this.getMembers(guild.id);
             const approvedMembers = guildMembers.filter(m => m.status === 'approved');
             
@@ -475,52 +380,6 @@ const db = {
             return true;
         }
         return false;
-    },
-
-    // --- Tier Upgrade System ---
-    getUpgradeRequests() {
-        return this.getData().upgradeRequests || [];
-    },
-
-    requestTierUpgrade(guildId, currentTier, requestedTier) {
-        const data = this.getData();
-        if (!data.upgradeRequests) data.upgradeRequests = [];
-        
-        // Check for existing pending request
-        const existing = data.upgradeRequests.find(r => r.guildId === guildId && r.status === 'pending');
-        if (existing) throw new Error('이미 승인 대기 중인 승급 요청이 있습니다.');
-
-        data.upgradeRequests.push({
-            id: 'REQ' + Date.now(),
-            guildId,
-            currentTier,
-            requestedTier,
-            status: 'pending',
-            createdAt: new Date().toISOString()
-        });
-        this.saveData(data);
-    },
-
-    approveUpgrade(requestId) {
-        const data = this.getData();
-        const req = data.upgradeRequests.find(r => r.id === requestId);
-        if (!req) return;
-
-        const guild = data.guilds.find(g => g.id === req.guildId);
-        if (guild) {
-            guild.tier = req.requestedTier;
-            req.status = 'approved';
-            this.saveData(data);
-        }
-    },
-
-    rejectUpgrade(requestId) {
-        const data = this.getData();
-        const req = data.upgradeRequests.find(r => r.id === requestId);
-        if (req) {
-            req.status = 'rejected';
-            this.saveData(data);
-        }
     }
 };
 

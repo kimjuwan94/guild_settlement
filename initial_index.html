@@ -1,0 +1,193 @@
+﻿<!DOCTYPE html>
+<html lang="ko" class="bg-gray-50 text-gray-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guild Settlement System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SheetJS for Excel Parsing -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        }
+        .nav-active {
+            background-color: #f3f4f6;
+            color: #111827;
+            font-weight: 600;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
+                        accent: { 500: '#8b5cf6', 600: '#7c3aed' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-64 glass-panel border-r border-gray-200 flex flex-col z-10">
+        <div class="h-20 flex items-center justify-center px-6 py-4 border-b border-gray-200">
+            <img src="logo.png" alt="Logo" class="h-10 w-auto object-contain">
+        </div>
+        
+        <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+            <p class="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">湲몃뱶??(GM)</p>
+            <a href="#" onclick="app.navigate('dashboard-gm')" id="nav-dashboard-gm" class="flex items-center px-3 py-2 text-sm rounded-md text-gray-600 hover:bg-gray-50 nav-item">
+                <i data-lucide="layout-dashboard" class="w-4 h-4 mr-3"></i>
+                ??쒕낫??            </a>
+            <a href="#" onclick="app.navigate('members')" id="nav-members" class="flex items-center px-3 py-2 text-sm rounded-md text-gray-600 hover:bg-gray-50 nav-item">
+                <i data-lucide="users" class="w-4 h-4 mr-3"></i>
+                ?뚯냽 湲몃뱶??愿由?            </a>
+            <a href="#" onclick="app.navigate('history')" id="nav-history" class="flex items-center px-3 py-2 text-sm rounded-md text-gray-600 hover:bg-gray-50 nav-item hidden">
+                <i data-lucide="history" class="w-4 h-4 mr-3"></i>
+                怨쇨굅 ?뺤궛 ?댁뿭
+            </a>
+            <a href="#" onclick="app.navigate('upload')" id="nav-upload" class="flex items-center px-3 py-2 text-sm rounded-md text-gray-600 hover:bg-gray-50 nav-item">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4 mr-3"></i>
+                ?묒? ?뺤궛 ?낅줈??            </a>
+
+            <div class="mt-8 mb-2">
+                <p class="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">理쒓퀬 愿由ъ옄 (Admin)</p>
+            </div>
+            <a href="#" onclick="app.navigate('admin-overview')" id="nav-admin-overview" class="flex items-center px-3 py-2 text-sm rounded-md text-gray-600 hover:bg-gray-50 nav-item">
+                <i data-lucide="bar-chart-3" class="w-4 h-4 mr-3"></i>
+                ?꾩껜 ?뺤궛 ?꾪솴
+            </a>
+            <a href="#" onclick="app.navigate('admin-history')" id="nav-admin-history" class="flex items-center px-3 py-2 text-sm rounded-md text-gray-600 hover:bg-gray-50 nav-item hidden">
+                <i data-lucide="wallet" class="w-4 h-4 mr-3"></i>
+                怨쇨굅 ?뺤궛 諛?吏湲?愿由?            </a>
+            <a href="#" onclick="app.navigate('admin-approvals')" id="nav-admin-approvals" class="flex items-center px-3 py-2 text-sm rounded-md text-gray-600 hover:bg-gray-50 nav-item hidden">
+                <i data-lucide="user-check" class="w-4 h-4 mr-3"></i>
+                ?좉퇋 湲몃뱶???뱀씤
+            </a>
+        </nav>
+
+        <div class="p-4 border-t border-gray-200">
+            <div class="flex flex-col gap-3">
+                <div class="flex items-center">
+                    <div id="current-user-avatar" class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold">A</div>
+                    <div class="ml-3">
+                        <p id="current-user-name" class="text-sm font-medium text-gray-700">理쒓퀬 愿由ъ옄</p>
+                        <p id="current-user-role" class="text-xs font-medium text-gray-500">System Admin</p>
+                    </div>
+                    <button onclick="app.logout()" class="ml-auto text-gray-400 hover:text-red-500" title="濡쒓렇?꾩썐">
+                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                
+                <!-- Admin: Switch Account Button -->
+                <button id="btn-switch-account" onclick="app.showSwitchModal()" style="display: none;" class="w-full py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors flex items-center justify-center">
+                    <i data-lucide="users" class="w-3.5 h-3.5 mr-1.5"></i> 湲몃뱶???붾㈃?쇰줈 ?대룞
+                </button>
+                
+                <!-- GM (Impersonated): Return to Admin Button -->
+                <button id="btn-return-admin" onclick="app.returnToAdmin()" style="display: none;" class="w-full py-1.5 text-xs font-bold bg-red-50 hover:bg-red-100 text-red-600 rounded border border-red-200 transition-colors flex items-center justify-center">
+                    <i data-lucide="shield-alert" class="w-3.5 h-3.5 mr-1.5"></i> 理쒓퀬 愿由ъ옄濡?蹂듦?
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col bg-gray-50 h-screen overflow-hidden">
+        <!-- Top header -->
+        <header class="h-16 glass-panel border-b border-gray-200 flex items-center justify-between px-8 z-10">
+            <h2 id="page-title" class="text-xl font-semibold text-gray-800">??쒕낫??/h2>
+            <div class="flex items-center space-x-4">
+                <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                    <span class="w-2 h-2 rounded-full bg-green-500 mr-1.5"></span>
+                    System Online
+                </span>
+                <button onclick="app.logout()" class="text-sm text-gray-500 hover:text-red-600 font-medium flex items-center transition-colors">
+                    <i data-lucide="log-out" class="w-4 h-4 mr-1"></i>
+                    濡쒓렇?꾩썐
+                </button>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <div id="app-content" class="flex-1 overflow-auto p-8 relative">
+            <!-- Dynamic content injected here -->
+        </div>
+    </main>
+
+    <!-- Login Screen Overlay -->
+    <div id="login-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-70 backdrop-blur-sm">
+        <div class="w-full max-w-md p-8 glass-panel rounded-2xl shadow-2xl relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary-400 to-purple-500"></div>
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                    <i data-lucide="shield-check" class="w-8 h-8 text-primary-600"></i>
+                </div>
+                <h2 class="text-2xl font-black text-gray-800">?뺤궛 愿由??쒖뒪??/h2>
+                <p class="text-sm text-gray-500 mt-2">理쒓퀬 愿由ъ옄 ?먮뒗 湲몃뱶??怨꾩젙?쇰줈 濡쒓렇?명븯?몄슂</p>
+            </div>
+            
+            <form onsubmit="app.handleLogin(event)" class="space-y-5">
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">?묒냽 ?꾩씠??/label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i data-lucide="user" class="w-4 h-4 text-gray-400"></i>
+                        </div>
+                        <input type="text" id="login-id" class="w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-gray-50 transition-colors" placeholder="?꾩씠?붾? ?낅젰?섏꽭?? required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">鍮꾨?踰덊샇</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i data-lucide="lock" class="w-4 h-4 text-gray-400"></i>
+                        </div>
+                        <input type="password" id="login-pw" class="w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-gray-50 transition-colors" placeholder="鍮꾨?踰덊샇瑜??낅젰?섏꽭?? required>
+                    </div>
+                </div>
+                <div id="login-error" class="hidden text-red-500 text-sm font-medium text-center bg-red-50 py-2 rounded-lg border border-red-100"></div>
+                <button type="submit" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors">
+                    濡쒓렇??                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Switch Account Modal -->
+    <div id="switch-account-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="glass-panel w-full max-w-sm p-6 rounded-xl shadow-xl">
+            <h3 class="text-lg font-semibold mb-2 border-b pb-2 flex items-center"><i data-lucide="users" class="w-5 h-5 mr-2 text-primary-600"></i>湲몃뱶???붾㈃?쇰줈 ?대룞</h3>
+            <p class="text-xs text-gray-500 mb-4">?묒냽??湲몃뱶瑜??좏깮?섏꽭?? ?묒냽 ???몄젣?좎? 醫뚯륫 ?섎떒 踰꾪듉???듯빐 ?ㅼ떆 理쒓퀬 愿由ъ옄濡?蹂듦??????덉뒿?덈떎.</p>
+            <div id="switch-guild-list" class="max-h-60 overflow-y-auto space-y-2 mb-4 pr-1">
+                <!-- populated dynamically -->
+            </div>
+            <div class="flex justify-end">
+                <button type="button" onclick="document.getElementById('switch-account-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">痍⑥냼</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/db.js?v=11"></script>
+    <script src="js/settlement_engine.js?v=11"></script>
+    <script src="js/excel_parser.js?v=11"></script>
+    <script src="js/app.js?v=11"></script>
+    <script>
+        // Initialize lucide icons
+        lucide.createIcons();
+    </script>
+</body>
+</html>

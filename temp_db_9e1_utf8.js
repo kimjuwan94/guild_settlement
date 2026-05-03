@@ -1,29 +1,24 @@
-const db = {
+﻿const db = {
     _key: 'guild_sys_data_v3',
     
     _defaultData: {
         currentWeekId: null, // "YYYY-MM-DD" of the most recent Wednesday
         guilds: [
-            { id: 'G_RECOVERED', name: '김해플로체', gmName: '김현제', username: '김현제', password: '4858', createdAt: '2026-05-03', tier: 'Gold' }
+            { id: 'G_RECOVERED', name: '源?댄뵆濡쒖껜', gmName: '源?꾩젣', username: '源?꾩젣', password: '4858', createdAt: '2026-05-03', tier: 'Bronze' }
         ],
         members: [
-            { id: 'MR01', guildId: 'G_RECOVERED', name: '안재철', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR02', guildId: 'G_RECOVERED', name: '최정윤', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR03', guildId: 'G_RECOVERED', name: '오영택', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR04', guildId: 'G_RECOVERED', name: '박은규', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR05', guildId: 'G_RECOVERED', name: '강민효', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR06', guildId: 'G_RECOVERED', name: '방재진', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR07', guildId: 'G_RECOVERED', name: '김효식', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR08', guildId: 'G_RECOVERED', name: '송광정', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR09', guildId: 'G_RECOVERED', name: '김문수', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR10', guildId: 'G_RECOVERED', name: '양형진', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR11', guildId: 'G_RECOVERED', name: '김태영', baeminId: '', coupangPhone: '', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
-            { id: 'MR12', guildId: 'G_RECOVERED', name: '김현제', baeminId: '', coupangPhone: '5951', deliveries: 0, status: 'approved', createdAt: '2026-05-03' }
+            { id: 'MR01', guildId: 'G_RECOVERED', name: '諛뺤???, baeminId: '', coupangPhone: '9952', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR02', guildId: 'G_RECOVERED', name: '?덉젙??, baeminId: '', coupangPhone: '2744', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR03', guildId: 'G_RECOVERED', name: '?뺤젙??, baeminId: '', coupangPhone: '2744', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR04', guildId: 'G_RECOVERED', name: '源?숉썕', baeminId: '', coupangPhone: '0027', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR05', guildId: 'G_RECOVERED', name: '?좎젙??, baeminId: '', coupangPhone: '4939', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR06', guildId: 'G_RECOVERED', name: '?좎꽦諛?, baeminId: '', coupangPhone: '5951', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR07', guildId: 'G_RECOVERED', name: '?앹슦李?, baeminId: '', coupangPhone: '9042', deliveries: 0, status: 'approved', createdAt: '2026-05-03' },
+            { id: 'MR08', guildId: 'G_RECOVERED', name: '源?꾩젣', baeminId: '', coupangPhone: '5951', deliveries: 0, status: 'approved', createdAt: '2026-05-03' }
         ],
         settlements: [],
         globalNotice: "",
-        upgradeRequests: [], // { guildId, currentTier, requestedTier, status: 'pending'|'approved'|'rejected', createdAt }
-        registrationHistory: [] // [{ type: 'member_add'|'guild_add', guildId, name, timestamp, details }]
+        upgradeRequests: [] // { guildId, currentTier, requestedTier, status: 'pending'|'approved'|'rejected', createdAt }
     },
 
     _memoryData: null,
@@ -31,20 +26,18 @@ const db = {
 
     async loadFromServer() {
         try {
-            // 1. 서버(Firebase)와 로컬(LocalStorage) 데이터 모두 가져오기
-            const response = await fetch(this._firebaseUrl);
+            // 1. ?쒕쾭(Firebase)? 濡쒖뺄(LocalStorage) ?곗씠??紐⑤몢 媛?몄삤湲?            const response = await fetch(this._firebaseUrl);
             const cloudData = await response.json();
             const localDataStr = localStorage.getItem(this._key);
             const localData = localDataStr ? JSON.parse(localDataStr) : null;
 
-            // 2. 기본 데이터 구조 준비
-            let finalData = { ...this._defaultData };
+            // 2. 湲곕낯 ?곗씠??援ъ“ 以鍮?            let finalData = { ...this._defaultData };
 
-            // 3. 지능적 데이터 병합 (서버 + 로컬 + 기본복구데이터)
+            // 3. 吏?μ쟻 ?곗씠??蹂묓빀 (?쒕쾭 + 濡쒖뺄 + 湲곕낯蹂듦뎄?곗씠??
             const sourceData = cloudData || localData || this._defaultData;
             finalData = { ...finalData, ...sourceData };
 
-            // 길드 병합
+            // 湲몃뱶 蹂묓빀
             const allGuilds = [...this._defaultData.guilds];
             [cloudData, localData].forEach(d => {
                 if (d && d.guilds) {
@@ -55,29 +48,24 @@ const db = {
             });
             finalData.guilds = allGuilds;
 
-            // 멤버 및 실적 병합 (최고 실적 선택)
+            // 硫ㅻ쾭 諛??ㅼ쟻 蹂묓빀 (理쒓퀬 ?ㅼ쟻 ?좏깮)
             const allMembers = [...this._defaultData.members];
             [cloudData, localData].forEach(d => {
                 if (d && d.members) {
                     d.members.forEach(m => {
-                        // 김해플로체(복구길드)의 기존 잘못된 멤버가 다시 섞이지 않도록 방지
-                        if (m.guildId === 'G_RECOVERED' && !this._defaultData.members.find(dm => dm.name === m.name)) {
-                            return; 
-                        }
-
                         const existing = allMembers.find(am => am.id === m.id);
                         if (!existing) {
                             allMembers.push(m);
                         } else {
                             existing.deliveries = Math.max(existing.deliveries || 0, m.deliveries || 0);
-                            if (m.tier) existing.tier = m.tier; // 등급 정보 보존
+                            if (m.tier) existing.tier = m.tier; // ?깃툒 ?뺣낫 蹂댁〈
                         }
                     });
                 }
             });
             finalData.members = allMembers;
 
-            // 정산 내역 병합 (중복 제거)
+            // ?뺤궛 ?댁뿭 蹂묓빀 (以묐났 ?쒓굅)
             const allSettlements = [...(this._defaultData.settlements || [])];
             [cloudData, localData].forEach(d => {
                 if (d && d.settlements) {
@@ -90,7 +78,7 @@ const db = {
 
             this._memoryData = finalData;
             
-            // 4. 합본을 양쪽에 다시 저장 (복구 및 동기화)
+            // 4. ?⑸낯???묒そ???ㅼ떆 ???(蹂듦뎄 諛??숆린??
             localStorage.setItem(this._key, JSON.stringify(this._memoryData));
             if (this._memoryData.guilds.length > 0) {
                 this.saveData(this._memoryData);
@@ -116,21 +104,20 @@ const db = {
     saveData(data) {
         this._memoryData = data;
         
-        // 1. 로컬 백업 저장 (오프라인/에러 대비)
+        // 1. 濡쒖뺄 諛깆뾽 ???(?ㅽ봽?쇱씤/?먮윭 ?鍮?
         try {
             localStorage.setItem(this._key, JSON.stringify(data));
         } catch (e) {
             console.error('Local storage save failed:', e);
         }
 
-        // 2. Firebase 실시간 동기화
-        fetch(this._firebaseUrl, {
-            method: 'PUT', // 덮어쓰기
+        // 2. Firebase ?ㅼ떆媛??숆린??        fetch(this._firebaseUrl, {
+            method: 'PUT', // ??뼱?곌린
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         }).catch(e => {
             console.error('Firebase save failed:', e);
-            alert('클라우드 동기화 실패! 인터넷 연결을 확인해주세요.');
+            alert('?대씪?곕뱶 ?숆린???ㅽ뙣! ?명꽣???곌껐???뺤씤?댁＜?몄슂.');
         });
     },
 
@@ -176,17 +163,6 @@ const db = {
             createdAt: new Date().toISOString().split('T')[0]
         };
         data.guilds.push(newGuild);
-
-        // Record history
-        if (!data.registrationHistory) data.registrationHistory = [];
-        data.registrationHistory.push({
-            type: 'guild_add',
-            guildId: generatedId,
-            name: name,
-            timestamp: new Date().toISOString(),
-            details: `Admin created guild: ${name}`
-        });
-
         this.saveData(data);
         return newGuild;
     },
@@ -205,19 +181,6 @@ const db = {
         return false;
     },
 
-    deleteGuild(guildId) {
-        const data = this.getData();
-        // 1. 길드 삭제
-        data.guilds = data.guilds.filter(g => g.id !== guildId);
-        // 2. 해당 길드 소속 멤버 삭제 (연쇄 삭제)
-        data.members = data.members.filter(m => m.guildId !== guildId);
-        // 3. (선택사항) 해당 길드의 정산 내역도 삭제할 수 있음
-        // data.settlements = data.settlements.filter(s => s.guildId !== guildId);
-        
-        this.saveData(data);
-        return true;
-    },
-
     // --- Notices ---
     getNotice() {
         return this.getData().globalNotice || "";
@@ -232,7 +195,7 @@ const db = {
     // --- Member Methods ---
     getMembers(guildId = null) {
         const members = this.getData().members.map(m => {
-            // 기존 데이터 호환: status가 없으면 기본적으로 'approved'
+            // 湲곗〈 ?곗씠???명솚: status媛 ?놁쑝硫?湲곕낯?곸쑝濡?'approved'
             m.status = m.status || 'approved';
             return m;
         });
@@ -247,7 +210,7 @@ const db = {
         const data = this.getData();
         const guild = this.getGuildById(guildId);
         
-        // 1. 등급별 인원 제한 체크 (None: 9명, Bronze: 10명, Silver: 15명, Gold: 20명)
+        // 1. ?깃툒蹂??몄썝 ?쒗븳 泥댄겕 (None: 9紐? Bronze: 10紐? Silver: 15紐? Gold: 20紐?
         const currentCount = this.getHeadcountForGuild(guildId);
         const tier = guild.tier || 'None';
         let maxLimit = 9; // None
@@ -256,7 +219,7 @@ const db = {
         if (tier === 'Gold') maxLimit = 20;
 
         if (currentCount >= maxLimit) {
-            throw new Error(`현재 길드 등급(${tier})의 최대 인원(${maxLimit}명)에 도달했습니다. 더 추가하려면 본사에 승급을 요청하세요.`);
+            throw new Error(`?꾩옱 湲몃뱶 ?깃툒(${tier})??理쒕? ?몄썝(${maxLimit}紐????꾨떖?덉뒿?덈떎. ??異붽??섎젮硫?蹂몄궗???밴툒???붿껌?섏꽭??`);
         }
 
         const count = data.members.length + 1;
@@ -264,20 +227,9 @@ const db = {
         member.guildId = guildId;
         member.deliveries = 0; // Initialize deliveries
         member.createdAt = new Date().toISOString().split('T')[0];
-        member.memo = member.memo || ''; // 추가된 메모 필드
+        member.memo = member.memo || ''; // 異붽???硫붾え ?꾨뱶
         member.status = 'approved'; // simplified: auto approve for now
         data.members.push(member);
-
-        // Record history
-        if (!data.registrationHistory) data.registrationHistory = [];
-        data.registrationHistory.push({
-            type: 'member_add',
-            guildId: guildId,
-            name: member.name,
-            timestamp: new Date().toISOString(),
-            details: `Member added to guild ${guildId}`
-        });
-
         this.saveData(data);
         return member;
     },
@@ -318,15 +270,15 @@ const db = {
     },
 
     getHeadcountForGuild(guildId) {
-        // 인원수는 'approved' 상태인 멤버만 집계
+        // ?몄썝?섎뒗 'approved' ?곹깭??硫ㅻ쾭留?吏묎퀎
         const members = this.getMembers(guildId).filter(m => m.status === 'approved');
         const guild = this.getGuildById(guildId);
         if (!guild) return members.length;
         
-        // 길드장이 승인된 멤버 리스트에 이미 등록되어 있는지 확인 (공백 무시)
+        // 湲몃뱶?μ씠 ?뱀씤??硫ㅻ쾭 由ъ뒪?몄뿉 ?대? ?깅줉?섏뼱 ?덈뒗吏 ?뺤씤 (怨듬갚 臾댁떆)
         const isGmInList = members.some(m => m.name.replace(/\s/g,'') === guild.gmName.replace(/\s/g,''));
         
-        // 멤버 수 + (길드장이 등록 안되어 있으면 1명 추가)
+        // 硫ㅻ쾭 ??+ (湲몃뱶?μ씠 ?깅줉 ?덈릺???덉쑝硫?1紐?異붽?)
         return members.length + (isGmInList ? 0 : 1);
     },
 
@@ -356,7 +308,7 @@ const db = {
         tuesdayDateObj.setDate(tuesdayDateObj.getDate() + 6);
         const endStr = this.formatDate(tuesdayDateObj);
         
-        return `${startStr}(수) ~ ${endStr}(화) 정산`;
+        return `${startStr}(?? ~ ${endStr}(?? ?뺤궛`;
     },
 
     checkAndAutoFinalize(settlementEngine) {
@@ -408,8 +360,8 @@ const db = {
     _runFinalization(data, weekName, settlementEngine) {
         // Calculate settlement for each guild and save to history
         data.guilds.forEach(guild => {
-            // 정산 시 'approved' 상태인 멤버의 실적만 가져오지만, 애초에 parser에서 매칭을 거부하므로 deliveries는 0일 것임.
-            // 안전을 위해 getMembers(guild.id).filter 활용 (데이터 일관성 보장)
+            // ?뺤궛 ??'approved' ?곹깭??硫ㅻ쾭???ㅼ쟻留?媛?몄삤吏留? ?좎큹??parser?먯꽌 留ㅼ묶??嫄곕??섎?濡?deliveries??0??寃껋엫.
+            // ?덉쟾???꾪빐 getMembers(guild.id).filter ?쒖슜 (?곗씠???쇨???蹂댁옣)
             const guildMembers = this.getMembers(guild.id);
             const approvedMembers = guildMembers.filter(m => m.status === 'approved');
             
@@ -488,7 +440,7 @@ const db = {
         
         // Check for existing pending request
         const existing = data.upgradeRequests.find(r => r.guildId === guildId && r.status === 'pending');
-        if (existing) throw new Error('이미 승인 대기 중인 승급 요청이 있습니다.');
+        if (existing) throw new Error('?대? ?뱀씤 ?湲?以묒씤 ?밴툒 ?붿껌???덉뒿?덈떎.');
 
         data.upgradeRequests.push({
             id: 'REQ' + Date.now(),
