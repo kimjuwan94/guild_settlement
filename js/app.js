@@ -419,20 +419,19 @@ const app = {
                 </div>
 
                 <div class="glass-panel rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left">
+                    <div class="overflow-x-auto pb-2">
+                        <table class="w-full text-left border-collapse">
                             <thead>
-                                <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
-                                    <th class="py-3 px-4 font-semibold rounded-tl-lg">사번</th>
-                                    <th class="py-3 px-4 font-semibold">이름</th>
-                                    <th class="py-3 px-4 font-semibold">배민 ID</th>
-                                    <th class="py-3 px-4 font-semibold">쿠팡 뒷자리</th>
-                                    <th class="py-3 px-4 font-semibold text-blue-700">이번 주 누적 배달건수</th>
-                                    <th class="py-3 px-4 font-semibold rounded-tr-lg text-right">관리</th>
+                                <tr class="bg-gray-50 text-gray-500 text-[10px] md:text-xs uppercase tracking-wider border-b border-gray-200">
+                                    <th class="py-3 px-4 font-bold min-w-[80px]">이름/상태</th>
+                                    <th class="py-3 px-4 font-bold min-w-[100px]">배민 ID</th>
+                                    <th class="py-3 px-4 font-bold min-w-[90px]">쿠팡 뒷자리</th>
+                                    <th class="py-3 px-4 font-bold min-w-[100px] text-blue-700">주간 실적</th>
+                                    <th class="py-3 px-4 font-bold min-w-[60px] text-right">관리</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                ${rows.length > 0 ? rows : `<tr><td colspan="6" class="text-center py-8 text-gray-400">등록된 길드원이 없습니다.</td></tr>`}
+                            <tbody class="divide-y divide-gray-100">
+                                ${rows.length > 0 ? rows : `<tr><td colspan="5" class="text-center py-8 text-gray-400">등록된 길드원이 없습니다.</td></tr>`}
                             </tbody>
                         </table>
                     </div>
@@ -475,9 +474,55 @@ const app = {
     renderUpload(container) {
         if (this.state.currentUser.role !== 'admin') return;
         container.innerHTML = `
-                            <div class="w-10 h-10 rounded-full bg-[#ff3232] flex items-center justify-center text-white font-bold mr-3">쿠팡</div>
-                            <h3 class="font-semibold text-gray-800">쿠팡이츠 엑셀 업로드</h3>
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-8 rounded-r-lg shadow-sm">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <i data-lucide="info" class="w-5 h-5 text-blue-500"></i>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-bold text-blue-800">전체 길드 일괄 합산 (Admin 전용)</h3>
+                        <p class="mt-1 text-sm text-blue-700 leading-relaxed">
+                            여러 엑셀 파일을 선택하여 업로드하면 <b>전체 마스터 길드원 DB</b>를 검색하여 각 길드장의 현황판에 배달 실적이 계속 누적 합산(+)됩니다.
+                            <br><span class="text-xs opacity-75">※ 매주 수요일 자정을 기점으로 시스템 접속 시 자동으로 이전 데이터가 마감 처리되고 초기화됩니다.</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <!-- Baemin Upload -->
+                <div class="glass-panel p-6 rounded-2xl border border-gray-100 shadow-lg relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1.5 h-full bg-teal-500"></div>
+                    <div class="flex items-center mb-6">
+                        <div class="w-10 h-10 bg-teal-50 rounded-full flex items-center justify-center mr-3">
+                            <i data-lucide="bike" class="w-5 h-5 text-teal-600"></i>
                         </div>
+                        <h3 class="text-lg font-bold text-gray-800">배민 엑셀 업로드</h3>
+                    </div>
+                    <input type="file" id="baemin-files" multiple accept=".xlsx, .xls" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 mb-4 cursor-pointer">
+                    <button onclick="app.processUpload('baemin')" class="w-full py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-all flex items-center justify-center">
+                        <i data-lucide="zap" class="w-4 h-4 mr-2"></i> 파일 일괄 파싱 및 누적
+                    </button>
+                </div>
+
+                <!-- Coupang Upload -->
+                <div class="glass-panel p-6 rounded-2xl border border-gray-100 shadow-lg relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
+                    <div class="flex items-center mb-6">
+                        <div class="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center mr-3">
+                            <i data-lucide="truck" class="w-5 h-5 text-red-600"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-800">쿠팡 엑셀 업로드</h3>
+                    </div>
+                    <input type="file" id="coupang-files" multiple accept=".xlsx, .xls" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 mb-4 cursor-pointer">
+                    <button onclick="app.processUpload('coupang')" class="w-full py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-all flex items-center justify-center">
+                        <i data-lucide="zap" class="w-4 h-4 mr-2"></i> 파일 일괄 파싱 및 누적
+                    </button>
+                </div>
+            </div>
+
+            <div id="upload-result" class="hidden"></div>
+        `;
                         <input type="file" id="file-coupang" accept=".xlsx,.xls,.csv" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 mb-4 cursor-pointer"/>
                         <button onclick="app.processUpload('coupang')" class="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors">파일 일괄 파싱 및 누적</button>
                     </div>
