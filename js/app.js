@@ -1290,11 +1290,21 @@ const app = {
 
         if (!baeminId && !coupangPhone) {
             alert('배민 커넥트 ID 또는 쿠팡이츠 뒷자리 중 최소 하나는 입력해야 실적 매칭이 가능합니다.');
+            return;
         }
 
-        db.addMember(guildId, { name, baeminId, coupangPhone, memo });
-        document.getElementById('add-modal').classList.add('hidden');
-        this.renderMembers(document.getElementById('app-content'));
+        try {
+            db.addMember(guildId, { name, baeminId, coupangPhone, memo });
+            document.getElementById('add-modal').classList.add('hidden');
+            this.renderMembers(document.getElementById('app-content'));
+        } catch (error) {
+            alert(error.message);
+        }
+    },
+
+    showAddMemberModal() {
+        document.getElementById('add-member-form').reset();
+        document.getElementById('add-modal').classList.remove('hidden');
     },
 
     showEditMemberModal(id) {
