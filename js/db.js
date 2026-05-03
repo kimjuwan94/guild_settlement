@@ -26,39 +26,66 @@ const db = {
 
     async loadFromServer() {
         try {
-            // 1. Firebase에서 데이터 가져오기
+            // 1. 서버(Firebase)와 로컬(LocalStorage) 데이터 모두 가져오기
             const response = await fetch(this._firebaseUrl);
             const cloudData = await response.json();
-
             const localDataStr = localStorage.getItem(this._key);
-            let localData = null;
-            if (localDataStr) {
-                localData = JSON.parse(localDataStr);
-            }
+            const localData = localDataStr ? JSON.parse(localDataStr) : null;
 
-            if (cloudData) {
-                // Firebase 데이터와 기본 복구 데이터를 지능적으로 합침 (Merge)
-                const mergedGuilds = [...this._defaultData.guilds];
-                (cloudData.guilds || []).forEach(cg => {
-                    if (!mergedGuilds.find(mg => mg.id === cg.id)) mergedGuilds.push(cg);
-                });
+            // 2. 기본 데이터 구조 준비
+            let finalData = { ...this._defaultData };
 
-                const mergedMembers = [...this._defaultData.members];
-                (cloudData.members || []).forEach(cm => {
-                    if (!mergedMembers.find(mm => mm.id === cm.id)) mergedMembers.push(cm);
-                });
+            // 3. 지능적 데이터 병합 (서버 + 로컬 + 기본복구데이터)
+            const sourceData = cloudData || localData || this._defaultData;
+            finalData = { ...finalData, ...sourceData };
 
-                this._memoryData = { 
-                    ...this._defaultData, 
-                    ...cloudData, 
-                    guilds: mergedGuilds,
-                    members: mergedMembers
-                };
-                
-                // 최신 합본을 로컬과 서버에 다시 백업
-                localStorage.setItem(this._key, JSON.stringify(this._memoryData));
+            // 길드 병합
+            const allGuilds = [...this._defaultData.guilds];
+            [cloudData, localData].forEach(d => {
+                if (d && d.guilds) {
+                    d.guilds.forEach(g => {
+                        if (!allGuilds.find(ag => ag.id === g.id)) allGuilds.push(g);
+                    });
+                }
+            });
+            finalData.guilds = allGuilds;
+
+            // 멤버 및 실적 병합 (최고 실적 선택)
+            const allMembers = [...this._defaultData.members];
+            [cloudData, localData].forEach(d => {
+                if (d && d.members) {
+                    d.members.forEach(m => {
+                        const existing = allMembers.find(am => am.id === m.id);
+                        if (!existing) {
+                            allMembers.push(m);
+                        } else {
+                            existing.deliveries = Math.max(existing.deliveries || 0, m.deliveries || 0);
+                            if (m.tier) existing.tier = m.tier; // 등급 정보 보존
+                        }
+                    });
+                }
+            });
+            finalData.members = allMembers;
+
+            // 정산 내역 병합 (중복 제거)
+            const allSettlements = [...(this._defaultData.settlements || [])];
+            [cloudData, localData].forEach(d => {
+                if (d && d.settlements) {
+                    d.settlements.forEach(s => {
+                        if (!allSettlements.find(as => as.id === s.id)) allSettlements.push(s);
+                    });
+                }
+            });
+            finalData.settlements = allSettlements;
+
+            this._memoryData = finalData;
+            
+            // 4. 합본을 양쪽에 다시 저장 (복구 및 동기화)
+            localStorage.setItem(this._key, JSON.stringify(this._memoryData));
+            if (this._memoryData.guilds.length > 0) {
                 this.saveData(this._memoryData);
-            } else {
+            }
+        } catch (e) {
                 // Firebase가 텅 비어있음 (최초 생성)
                 if (localData) {
                     console.log('Migrating local data to empty Firebase...');
