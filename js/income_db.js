@@ -66,15 +66,66 @@ const incomeDb = {
     },
 
     bulkAddRiders(riderList) {
-        const results = { added: 0, skipped: [], errors: [] };
+        const results = { added: 0, updated: [], skipped: [], errors: [] };
+
+        // ★ STEP 1: 엑셀 내 동일인 행 사전 병합
+        // 이름 + (주민번호 or 전화번호) 기준으로 여러 행을 하나로 합침
+        const mergeKey = r => {
+            const name = (r.name || '').trim();
+            const phone = (r.phone || '').replace(/-/g, '').trim();
+            const resident = (r.residentNo || '').replace(/-/g, '').trim();
+            return `${name}|${resident || phone}`;
+        };
+
+        const mergedMap = {};
         riderList.forEach(r => {
-            try {
-                this.addRider(r);
-                results.added++;
-            } catch (e) {
-                results.skipped.push({ name: r.name, reason: e.message });
+            const key = mergeKey(r);
+            if (!mergedMap[key]) {
+                mergedMap[key] = { ...r };
+            } else {
+                // 기존 행에 없는 값만 채워넣기
+                const m = mergedMap[key];
+                if (!m.baeminId     && r.baeminId)     m.baeminId     = r.baeminId.trim();
+                if (!m.coupangLast4 && r.coupangLast4) m.coupangLast4 = r.coupangLast4.trim();
+                if (!m.residentNo   && r.residentNo)   m.residentNo   = r.residentNo.trim();
+                if (!m.phone        && r.phone)         m.phone        = r.phone.trim();
             }
         });
+        const mergedList = Object.values(mergedMap);
+
+        // ★ STEP 2: 병합된 목록으로 DB 등록/업데이트
+        mergedList.forEach(r => {
+            try {
+                const existing = this.getRiders().find(ex => {
+                    const sameName = ex.name.trim() === (r.name||'').trim();
+                    const samePhone = ex.phone.replace(/-/g,'') === (r.phone||'').replace(/-/g,'');
+                    const sameResident = r.residentNo &&
+                        ex.residentNo.replace(/-/g,'') === r.residentNo.replace(/-/g,'');
+                    return sameName && (samePhone || sameResident);
+                });
+
+                if (existing) {
+                    // 기존 라이더 → 비어있는 필드만 채워서 업데이트
+                    const updates = {};
+                    if (!existing.baeminId     && r.baeminId)     updates.baeminId     = r.baeminId.trim();
+                    if (!existing.coupangLast4 && r.coupangLast4) updates.coupangLast4 = r.coupangLast4.trim();
+                    if (!existing.residentNo   && r.residentNo)   updates.residentNo   = r.residentNo.trim();
+
+                    if (Object.keys(updates).length > 0) {
+                        this.updateRider(existing.id, updates);
+                        results.updated.push({ name: r.name, fields: Object.keys(updates).join(', ') });
+                    } else {
+                        results.skipped.push({ name: r.name, reason: '동일한 정보 이미 등록됨' });
+                    }
+                } else {
+                    this.addRider(r);
+                    results.added++;
+                }
+            } catch (e) {
+                results.errors.push({ name: r.name, reason: e.message });
+            }
+        });
+
         return results;
     },
 

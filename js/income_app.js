@@ -731,7 +731,12 @@ const incomeApp = {
             const riderList = await IncomeExcelParser.parseRiderBulk(file);
             if (riderList.length === 0) { alert('유효한 데이터가 없습니다. 양식을 확인해주세요.'); return; }
             const result = incomeDb.bulkAddRiders(riderList);
-            alert(`등록 완료!\n✅ 추가: ${result.added}명\n⏭️ 중복 스킵: ${result.skipped.length}명`);
+            const updatedNames = result.updated.map(u => `  · ${u.name} (${u.fields})`).join('\n');
+            const skippedNames = result.skipped.map(s => `  · ${s.name}`).join('\n');
+            let msg = `등록 완료!\n✅ 신규 추가: ${result.added}명\n🔄 정보 보완(병합): ${result.updated.length}명\n⏭️ 변경 없음(스킵): ${result.skipped.length}명`;
+            if (updatedNames) msg += `\n\n[병합된 라이더]\n${updatedNames}`;
+            if (skippedNames) msg += `\n\n[스킵된 라이더]\n${skippedNames}`;
+            alert(msg);
             this.render(document.getElementById('app-content'));
         } catch (err) {
             alert('파일 파싱 오류: ' + err.message);
