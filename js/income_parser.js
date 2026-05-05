@@ -336,12 +336,14 @@ const IncomeExcelParser = {
 
     downloadSummaryExcel(summaryRows, weekLabels) {
         const wb = XLSX.utils.book_new();
+        // 세무사 제출용: 이름 / 주민번호 / 합계금액만 포함
         const ws1 = XLSX.utils.json_to_sheet(summaryRows.map((r, idx) => ({
-            '번호': idx + 1, '이름': r.name, '전화번호': r.phone, '주민번호': r.residentNo,
-            '배민ID': r.baeminId, '쿠팡뒷번호': r.coupangLast4,
-            '배민 수입 합계(원)': r.baemin, '쿠팡 수입 합계(원)': r.coupang, '총 수입 합계(원)': r.total
+            '번호': idx + 1,
+            '이름': r.name,
+            '주민번호': r.residentNo || '',
+            '합계금액(원)': r.total
         })));
-        ws1['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+        ws1['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 20 }, { wch: 18 }];
         XLSX.utils.book_append_sheet(wb, ws1, '라이더별_수입_요약');
 
         const batchData = [];

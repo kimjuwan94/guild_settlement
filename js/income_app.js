@@ -399,33 +399,51 @@ const incomeApp = {
     },
 
     _parseRegionFromFilename(filename) {
-        const KNOWN = ['강남','강북','강서','강동','강릉','김해','부산','경남','경북','경기',
-                       '서울','인천','대구','광주','대전','울산','수원','성남','고양','창원',
-                       '구미','포항','진주','마산','통영','거제','양산','밀양','제주',
+        // 광역 단위 (넓은 개념 - 낮은 우선순위)
+        const BROAD = ['부산','경남','경북','경기','서울','인천','대구','광주','대전','울산','제주','강원'];
+        // 전체 알려진 지역 (BROAD 포함)
+        const KNOWN = [...BROAD,
+                       '강남','강북','강서','강동','강릉','김해','수원','성남','고양','창원',
+                       '경주','구미','포항','진주','마산','통영','거제','양산','밀양',
                        '종로','마포','영등포','동작','관악','서초','송파'];
+        const STOP = ['주식회사','플루체','플로체','정산서','확인용','협력사','소속','라이더',
+                      '배달','쿠팡','배민','스페이스','파트너','파트스','배달의민족'];
+
         const name = filename.replace(/\.xlsx?$/i, '');
 
-        // ★ 알려진 지역명 발견 시 → 뒤에 붙은 한글·영문·숫자까지 연장 추출
-        // 예: "김해북부" / "김해A" / "김해남부" / "강남3구역" 등
-        let bestMatch = '';
-        for (const region of KNOWN) {
-            if (!name.includes(region)) continue;
-            // 지역명 + 이후 한글/영문 연속 문자 모두 포함
-            const rx = new RegExp(region + '[가-힣A-Za-z0-9]*');
-            const m = name.match(rx);
-            if (m && m[0].length > bestMatch.length) {
-                bestMatch = m[0];
-            }
-        }
-        if (bestMatch) return bestMatch;
-
-        // fallback: 구분자로 나눠 한글 2~5자 토큰 중 마지막 의미있는 것
-        const stopWords = ['주식회사','플루체','정산서','확인용','협력사','소속','라이더',
-                           '배달','쿠팡','배민','스페이스','파트너','파트스'];
+        // ★ 전략 1: 구분자(_/공백/~)로 나눈 토큰 중 구체적인 지역 토큰 우선
+        // 광역 지명이 아니면서, 스탑워드가 아닌 순수 한글 2~6자 토큰 = 구체 지역명
         const tokens = name.split(/[_\s\-~]/)
             .map(t => t.replace(/[^가-힣A-Za-z0-9]/g, '').trim())
-            .filter(t => t.length >= 2 && t.length <= 8 && !stopWords.includes(t));
-        return tokens[tokens.length - 1] || '';
+            .filter(t => t.length >= 2);
+
+        // KNOWN 연장 매칭으로 만든 후보 목록 (ex: "부산금정중앙")
+        const extendedMatches = [];
+        for (const region of KNOWN) {
+            if (!name.includes(region)) continue;
+            const rx = new RegExp(region + '[가-힣A-Za-z0-9]*');
+            const m = name.match(rx);
+            if (m) extendedMatches.push(m[0]);
+        }
+
+        // 구체 토큰: 토큰이 BROAD에 속하지 않고, 스탑워드 포함 안 하고, 한글 2자 이상
+        const specificTokens = tokens.filter(t =>
+            /^[가-힣]{2,8}([A-Za-z0-9]*)$/.test(t) &&
+            !BROAD.includes(t) &&
+            !STOP.some(sw => t.includes(sw))
+        );
+
+        if (specificTokens.length > 0) {
+            // 구체 토큰 중 가장 긴 것 반환 (ex: "금정중앙" > "금정")
+            return specificTokens.sort((a, b) => b.length - a.length)[0];
+        }
+
+        // ★ 전략 2: KNOWN 연장 매칭 결과 중 가장 긴 것 반환
+        if (extendedMatches.length > 0) {
+            return extendedMatches.sort((a, b) => b.length - a.length)[0];
+        }
+
+        return '';
     },
 
     /**
