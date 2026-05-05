@@ -104,15 +104,16 @@ const incomeDb = {
      * @param {string} weekLabel - '2026-05-01' 등 주차 식별자
      * @param {Array}  records   - [{ riderId, name, amount }]
      */
-    addSettlementBatch(platform, weekLabel, records) {
+    addSettlementBatch(platform, weekLabel, records, region = '') {
         const settlements = this.getSettlements();
         const batchId = 'B_' + Date.now();
         const batch = {
             batchId,
-            platform,        // 'baemin' | 'coupang'
+            platform,
             weekLabel,
+            region: region.trim(),   // ★ 권역 정보
             uploadedAt: new Date().toISOString(),
-            records          // [{ riderId, name, amount }]
+            records
         };
         settlements.push(batch);
         this.saveSettlements(settlements);

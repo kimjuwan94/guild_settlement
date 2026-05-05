@@ -244,11 +244,14 @@ const incomeApp = {
         const makeRows = (rows, platform) => rows.map(r => `
             <div id="upload-row-${platform}-${r.id}" class="flex gap-2 items-center mb-2">
                 <input type="text" id="week-${platform}-${r.id}"
-                    placeholder="주차 (예: 2026-04-4)"
-                    class="w-36 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-${platform === 'baemin' ? 'teal' : 'red'}-400 focus:outline-none flex-shrink-0">
+                    placeholder="주차 (2026-04-4)"
+                    class="w-28 border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-${platform === 'baemin' ? 'teal' : 'red'}-400 focus:outline-none flex-shrink-0">
+                <input type="text" id="region-${platform}-${r.id}"
+                    placeholder="권역 (예:강남)"
+                    class="w-24 border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-gray-300 focus:outline-none flex-shrink-0">
                 <input type="file" id="file-${platform}-${r.id}" accept=".xlsx,.xls" multiple
                     onchange="incomeApp._autoDetectWeek('${platform}', ${r.id}, this)"
-                    class="flex-1 text-sm border rounded-lg px-3 py-2">
+                    class="flex-1 text-sm border rounded-lg px-2 py-2">
                 <button onclick="incomeApp._removeUploadRow('${platform}',${r.id})"
                     class="flex-shrink-0 w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg hover:border-red-300 transition-all">
                     <i data-lucide="x" class="w-4 h-4"></i>
@@ -352,11 +355,14 @@ const incomeApp = {
         div.className = 'flex gap-2 items-center mb-2';
         div.innerHTML = `
             <input type="text" id="week-${platform}-${id}"
-                placeholder="주차 (예: 2026-04-4)"
-                class="w-36 border rounded-lg px-3 py-2 text-sm flex-shrink-0">
+                placeholder="주차 (2026-04-4)"
+                class="w-28 border rounded-lg px-2 py-2 text-sm flex-shrink-0">
+            <input type="text" id="region-${platform}-${id}"
+                placeholder="권역 (예:강남)"
+                class="w-24 border rounded-lg px-2 py-2 text-sm flex-shrink-0">
             <input type="file" id="file-${platform}-${id}" accept=".xlsx,.xls" multiple
                 onchange="incomeApp._autoDetectWeek('${platform}', ${id}, this)"
-                class="flex-1 text-sm border rounded-lg px-3 py-2">
+                class="flex-1 text-sm border rounded-lg px-2 py-2">
             <button onclick="incomeApp._removeUploadRow('${platform}',${id})"
                 class="flex-shrink-0 w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg hover:border-red-300 transition-all">
                 <i data-lucide='x' class='w-4 h-4'></i>
@@ -365,20 +371,47 @@ const incomeApp = {
         if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
-    // ── 파일명 자동 주차 감지 ──────────────────────────────
+    // ── 파일명 자동 주차·권역 감지 ────────────────────────────
     _autoDetectWeek(platform, rowId, fileInput) {
-        const weekEl = document.getElementById(`week-${platform}-${rowId}`);
-        if (!weekEl || weekEl.value.trim()) return; // 이미 입력된 경우 덮어쓰지 않음
-
+        const weekEl   = document.getElementById(`week-${platform}-${rowId}`);
+        const regionEl = document.getElementById(`region-${platform}-${rowId}`);
         const file = fileInput.files[0];
         if (!file) return;
 
-        const label = this._parseWeekFromFilename(file.name, platform);
-        if (label) {
-            weekEl.value = label;
-            weekEl.classList.add('ring-2', platform === 'baemin' ? 'ring-teal-400' : 'ring-red-400');
-            setTimeout(() => weekEl.classList.remove('ring-2', 'ring-teal-400', 'ring-red-400'), 2000);
+        // 주차 자동 입력 (빈 칸일 때만)
+        if (weekEl && !weekEl.value.trim()) {
+            const label = this._parseWeekFromFilename(file.name, platform);
+            if (label) {
+                weekEl.value = label;
+                weekEl.classList.add('ring-2', platform === 'baemin' ? 'ring-teal-400' : 'ring-red-400');
+                setTimeout(() => weekEl.classList.remove('ring-2', 'ring-teal-400', 'ring-red-400'), 2000);
+            }
         }
+        // 권역 자동 입력 (빈 칸일 때만)
+        if (regionEl && !regionEl.value.trim()) {
+            const region = this._parseRegionFromFilename(file.name);
+            if (region) {
+                regionEl.value = region;
+                regionEl.classList.add('ring-2', 'ring-indigo-300');
+                setTimeout(() => regionEl.classList.remove('ring-2', 'ring-indigo-300'), 2000);
+            }
+        }
+    },
+
+    _parseRegionFromFilename(filename) {
+        const KNOWN = ['강남','강북','강서','강동','강릉','김해','부산','경남','경북','경기',
+                       '서울','인천','대구','광주','대전','울산','수원','성남','고양','창원',
+                       '구미','포항','진주','마산','통영','거제','양산','밀양','제주',
+                       '종로','마포','영등포','동작','관악','서초','송파'];
+        const name = filename.replace(/\.xlsx?$/i, '');
+        for (const region of KNOWN) {
+            if (name.includes(region)) return region;
+        }
+        const stopWords = ['주식회사','플루체','정산서','확인용','협력사','소속','라이더','배달','쿠팡','배민','스페이스','파트너','파트스'];
+        const tokens = name.split(/[_\s\-~]/)
+            .map(t => t.replace(/[^가-힣]/g, '').trim())
+            .filter(t => t.length >= 2 && t.length <= 5 && !stopWords.includes(t));
+        return tokens[tokens.length - 1] || '';
     },
 
     /**
@@ -495,6 +528,7 @@ const incomeApp = {
             const weekEl = document.getElementById(`week-${platform}-${row.id}`);
             const fileEl = document.getElementById(`file-${platform}-${row.id}`);
             const weekLabel = weekEl?.value.trim();
+            const region    = document.getElementById(`region-${platform}-${row.id}`)?.value.trim() || '';
             const files = Array.from(fileEl?.files || []);
 
             if (!weekLabel || files.length === 0) {
@@ -526,12 +560,12 @@ const incomeApp = {
             const mergedMatched = Object.values(mergedMap);
 
             if (mergedMatched.length > 0) {
-                incomeDb.addSettlementBatch(platform, weekLabel, mergedMatched);
+                incomeDb.addSettlementBatch(platform, weekLabel, mergedMatched, region);
                 totalSaved++;
             }
 
             results.push({
-                week: weekLabel,
+                week: weekLabel, region,
                 status: mergedMatched.length > 0 ? 'ok' : 'warn',
                 matched: mergedMatched.length,
                 unmatched: allUnmatched.length,
@@ -548,11 +582,13 @@ const incomeApp = {
                 </div>`;
             const icon = r.status === 'ok' ? '✅' : '⚠️';
             const color = r.status === 'ok' ? 'text-green-700' : 'text-yellow-700';
+            const regionTag = r.region ? `<span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full">${r.region}</span>` : '';
             const errHtml = r.errors?.map(e => `<span class="text-red-600 text-xs">❌ ${e.name}: ${e.error}</span>`).join('');
             return `
                 <div class="flex flex-wrap items-start gap-2 py-2 border-b border-gray-100">
                     <span class="text-sm">${icon}</span>
                     <span class="font-bold text-sm text-gray-800">${r.week}</span>
+                    ${regionTag}
                     <span class="text-sm ${color}">매칭: ${r.matched}명 | 미매칭: ${r.unmatched}건</span>
                     ${r.unmatchedNames ? `<span class="text-xs text-yellow-600">(${r.unmatchedNames})</span>` : ''}
                     ${errHtml || ''}
@@ -564,6 +600,29 @@ const incomeApp = {
                 <p class="font-bold text-gray-800 mb-3">📋 업로드 결과 — ${totalSaved}개 주차 저장 완료</p>
                 ${rowsHtml}
             </div>`;
+
+        // ★ 완료 후 행 초기화 (1개로 리셋)
+        const newId = this._nextRowId++;
+        if (platform === 'baemin') this._baeminRows = [{ id: newId }];
+        else this._coupangRows = [{ id: newId }];
+        const container = document.getElementById(`${platform}-upload-rows`);
+        if (container) {
+            container.innerHTML = `
+                <div id="upload-row-${platform}-${newId}" class="flex gap-2 items-center mb-2">
+                    <input type="text" id="week-${platform}-${newId}" placeholder="주차 (2026-04-4)"
+                        class="w-28 border rounded-lg px-2 py-2 text-sm flex-shrink-0">
+                    <input type="text" id="region-${platform}-${newId}" placeholder="권역 (예:강남)"
+                        class="w-24 border rounded-lg px-2 py-2 text-sm flex-shrink-0">
+                    <input type="file" id="file-${platform}-${newId}" accept=".xlsx,.xls" multiple
+                        onchange="incomeApp._autoDetectWeek('${platform}', ${newId}, this)"
+                        class="flex-1 text-sm border rounded-lg px-2 py-2">
+                    <button onclick="incomeApp._removeUploadRow('${platform}',${newId})"
+                        class="flex-shrink-0 w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg hover:border-red-300 transition-all">
+                        <i data-lucide='x' class='w-4 h-4'></i>
+                    </button>
+                </div>`;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
     },
 
     // ── 탭: 업로드 내역 ───────────────────────────────────
@@ -575,28 +634,56 @@ const incomeApp = {
                 <p>업로드된 정산서가 없습니다.</p>
             </div>`;
 
-        const rows = batches.map(b => `
-            <div class="glass-panel rounded-xl border border-gray-100 p-5 mb-3">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <span class="inline-block px-2 py-0.5 text-xs font-bold rounded-full mr-2 ${b.platform === 'baemin' ? 'bg-teal-100 text-teal-700' : 'bg-red-100 text-red-700'}">
-                            ${b.platform === 'baemin' ? '배민' : '쿠팡'}
-                        </span>
-                        <span class="font-bold text-gray-800">${b.weekLabel}</span>
-                        <span class="text-xs text-gray-400 ml-3">${new Date(b.uploadedAt).toLocaleString('ko-KR')}</span>
-                        <span class="text-xs text-gray-500 ml-3">매칭 ${b.records.length}건</span>
+        // 주차 + 플랫폼 단위로 그룹핑
+        const groups = {};
+        batches.forEach(b => {
+            const key = `${b.platform}|${b.weekLabel}`;
+            if (!groups[key]) groups[key] = { platform: b.platform, weekLabel: b.weekLabel, items: [] };
+            groups[key].items.push(b);
+        });
+
+        const groupHtml = Object.values(groups).map(g => {
+            const badge = g.platform === 'baemin'
+                ? '<span class="px-2 py-0.5 text-xs font-bold rounded-full bg-teal-100 text-teal-700">배민</span>'
+                : '<span class="px-2 py-0.5 text-xs font-bold rounded-full bg-red-100 text-red-700">쿠팡</span>';
+
+            const subItems = g.items.map(b => {
+                const regionTag = b.region
+                    ? `<span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full">${b.region}</span>`
+                    : `<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">권역미입력</span>`;
+                return `
+                    <div class="flex items-center justify-between py-2 pl-5 border-b border-gray-50 last:border-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-gray-300 text-xs">└</span>
+                            ${regionTag}
+                            <span class="text-xs text-gray-500">${b.records.length}명 반영</span>
+                            <span class="text-xs text-gray-400">${new Date(b.uploadedAt).toLocaleString('ko-KR')}</span>
+                        </div>
+                        <button onclick="incomeApp._deleteBatch('${b.batchId}','${b.weekLabel}')"
+                            class="text-red-400 hover:text-red-600 text-xs px-2 py-1 border border-red-200 rounded hover:bg-red-50 flex-shrink-0">삭제</button>
+                    </div>`;
+            }).join('');
+
+            return `
+                <div class="glass-panel rounded-xl border border-gray-100 mb-3 overflow-hidden">
+                    <div class="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-100">
+                        <div class="flex items-center gap-3">
+                            ${badge}
+                            <span class="font-bold text-gray-800">${g.weekLabel}</span>
+                            <span class="text-xs text-gray-400">${g.items.length}개 권역</span>
+                        </div>
+                        <span class="text-xs text-gray-400">총 ${g.items.reduce((s,b)=>s+b.records.length,0)}명</span>
                     </div>
-                    <button onclick="incomeApp._deleteBatch('${b.batchId}','${b.weekLabel}')"
-                        class="text-red-400 hover:text-red-600 text-xs px-3 py-1 border border-red-200 rounded hover:bg-red-50">삭제</button>
-                </div>
-            </div>`).join('');
+                    ${subItems}
+                </div>`;
+        }).join('');
 
         return `
             <div class="flex justify-between items-center mb-4">
                 <h3 class="font-bold text-gray-800">업로드된 정산서 목록 (${batches.length}건)</h3>
                 <p class="text-xs text-gray-400">※ 관리자가 직접 삭제하기 전까지 영구 보존됩니다.</p>
             </div>
-            ${rows}`;
+            ${groupHtml}`;
     },
 
     // ── 이벤트 핸들러 ─────────────────────────────────────
