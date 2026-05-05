@@ -44,46 +44,71 @@ const IncomeExcelParser = {
 
                     const ws = wb.Sheets[sheetName];
 
-                    // 원시 배열로 파싱 → 헤더 행 탐색
+                    // ★ raw 2D 배열로 읽기 (다중 헤더 행 대응)
                     const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-                    
-                    // 헤더 행 찾기: "라이더명" 또는 "user ID" 포함 행
+
+                    // ★ 헤더 행 탐색: "라이더명" 또는 "user" 포함 행 스캔
                     let headerRowIdx = -1;
-                    let headers = [];
-                    for (let i = 0; i < Math.min(rawRows.length, 20); i++) {
-                        const row = rawRows[i].map(c => this._norm(String(c)));
-                        if (row.some(c => c.includes('라이더명') || c.includes('userID') || c.includes('userid'))) {
+                    let nameColIdx   = -1;
+                    let idColIdx     = -1;
+                    let amountColIdx = -1;
+
+                    for (let i = 0; i < Math.min(rawRows.length, 30); i++) {
+                        const normRow = rawRows[i].map(c => this._norm(String(c)));
+
+                        const ni = normRow.findIndex(c =>
+                            c === '라이더명' || c.includes('라이더명')
+                        );
+                        if (ni !== -1) {
+                            // 같은 행에서 user ID 컬럼 찾기
+                            const ii = normRow.findIndex(c =>
+                                c.toLowerCase() === 'userid' ||
+                                c.toLowerCase().includes('userid') ||
+                                c.toLowerCase().includes('user')
+                            );
+                            // 같은 행에서 금액 컬럼 찾기
+                            const ai = normRow.findIndex(c =>
+                                c.includes('라이더별정산금액') || c.includes('정산금액') ||
+                                (c.includes('정산') && c.includes('액'))
+                            );
+
                             headerRowIdx = i;
-                            headers = rawRows[i].map(c => String(c).trim());
+                            nameColIdx   = ni;
+                            idColIdx     = ii;
+                            amountColIdx = ai;
                             break;
                         }
                     }
 
                     if (headerRowIdx === -1) {
-                        // 헤더를 못 찾으면 기본 json 파싱으로 폴백
-                        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-                        return this._parseBaeminRows(rows, riders, sheetName, resolve);
+                        reject(new Error(
+                            `배민 정산 시트에서 "라이더명" 컬럼을 찾을 수 없습니다.\n` +
+                            `시트: ${sheetName}\n` +
+                            `첫 5행 샘플: ${rawRows.slice(0, 5).map(r => r.slice(0, 6).join('|')).join(' / ')}`
+                        ));
+                        return;
                     }
 
-                    // 헤더 이후 데이터 행 파싱
-                    const nameIdx   = headers.findIndex(h => h.includes('라이더명') || h.includes('라이더 명'));
-                    const idIdx     = headers.findIndex(h => h.toLowerCase().includes('user id') || h.toLowerCase().includes('userid') || h === 'ID');
-                    const amountIdx = headers.findIndex(h => h.includes('라이더별정산금액') || h.includes('정산금액'));
+                    const debugMsg = `시트: ${sheetName} | 헤더행: ${headerRowIdx + 1}번째 | 라이더명열: ${nameColIdx} | ID열: ${idColIdx} | 금액열: ${amountColIdx}`;
 
-                    const dataRows = rawRows.slice(headerRowIdx + 1);
                     const matched = [], unmatched = [];
+                    const dataRows = rawRows.slice(headerRowIdx + 1);
 
-                    dataRows.forEach(row => {
-                        const riderName = this._norm(row[nameIdx] || '');
-                        const userId    = this._norm(row[idIdx] || '');
-                        const amount    = this._parseAmount(row[amountIdx] || 0);
+                    dataRows.forEach((row) => {
+                        const riderName = this._norm(row[nameColIdx] || '');
+                        const userId    = this._norm(row[idColIdx]   || '');
+                        const amount    = this._parseAmount(amountColIdx !== -1 ? row[amountColIdx] : 0);
 
                         if ((!riderName && !userId) || amount <= 0) return;
 
                         let rider = null;
+                        // 1단계: 배민ID 매칭
                         if (userId) {
-                            rider = riders.find(r => r.baeminId && r.baeminId.trim().toLowerCase() === userId.toLowerCase());
+                            rider = riders.find(r =>
+                                r.baeminId && r.baeminId.trim().toLowerCase() === userId.toLowerCase()
+                            );
                         }
+                        // 2단계: 이름 매칭 (유니코드 정규화)
                         if (!rider && riderName) {
                             rider = riders.find(r => this._norm(r.name) === riderName);
                         }
@@ -95,7 +120,7 @@ const IncomeExcelParser = {
                         }
                     });
 
-                    resolve({ matched, unmatched, sheetName, debug: `헤더행: ${headerRowIdx + 1}번째, 컬럼: 라이더명[${nameIdx}] ID[${idIdx}] 금액[${amountIdx}]` });
+                    resolve({ matched, unmatched, sheetName, debug: debugMsg });
 
                 } catch (err) { reject(err); }
             };
@@ -108,8 +133,8 @@ const IncomeExcelParser = {
         if (rows.length === 0) { resolve({ matched: [], unmatched: [], sheetName }); return; }
         const keys = Object.keys(rows[0]);
         const nameKey   = keys.find(k => k.includes('라이더명')) || '라이더명';
-        const idKey     = keys.find(k => k.toLowerCase().includes('user id') || k.toLowerCase() === 'userid') || 'user ID';
-        const amountKey = keys.find(k => k.includes('라이더별정산금액') || k.includes('정산금액')) || '라이더별정산금액';
+        const idKey     = keys.find(k => k.toLowerCase().includes('user')) || 'user ID';
+        const amountKey = keys.find(k => k.includes('정산금액') || k.includes('지급액')) || '라이더별정산금액';
         const matched = [], unmatched = [];
         rows.forEach(row => {
             const riderName = this._norm(row[nameKey] || '');

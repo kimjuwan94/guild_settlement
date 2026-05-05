@@ -4,6 +4,8 @@
  */
 const incomeApp = {
     _tab: 'summary', // 'summary' | 'riders' | 'upload' | 'batches'
+    _filterYear: '',   // 선택된 연도 ('' = 전체)
+    _filterMonth: '',  // 선택된 월 ('' = 전체)
 
     render(container) {
         const tabs = [
@@ -42,11 +44,45 @@ const incomeApp = {
 
     // ── 탭: 수입 집계 ─────────────────────────────────────
     _renderSummary() {
-        const weeks = incomeDb.getUniqueWeekLabels();
-        const summary = incomeDb.getSummaryByRider();
-        const totalBaemin = summary.reduce((s, r) => s + r.baemin, 0);
+        const allWeeks = incomeDb.getUniqueWeekLabels(); // ['2025-10-1','2025-10-2', ...]
+
+        // 연도/월 목록 추출 (주차 형식: 2025-10-1 → year=2025, month=10)
+        const yearSet = new Set(), monthSet = new Set();
+        allWeeks.forEach(w => {
+            const parts = w.split('-');
+            if (parts[0]) yearSet.add(parts[0]);
+            if (parts[1]) monthSet.add(parts[1].padStart(2,'0'));
+        });
+        const years  = [...yearSet].sort().reverse();
+        const months = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+
+        const yearOptions  = `<option value="">전체 연도</option>` +
+            years.map(y => `<option value="${y}" ${this._filterYear === y ? 'selected' : ''}>${y}년</option>`).join('');
+        const monthOptions = `<option value="">전체 월</option>` +
+            months.map(m => `<option value="${m}" ${this._filterMonth === m ? 'selected' : ''}>${parseInt(m)}월</option>`).join('');
+
+        // 필터에 맞는 주차 목록 계산
+        const filteredWeeks = allWeeks.filter(w => {
+            const parts = w.split('-');
+            const y = parts[0] || '';
+            const m = (parts[1] || '').padStart(2,'0');
+            if (this._filterYear  && y !== this._filterYear)  return false;
+            if (this._filterMonth && m !== this._filterMonth) return false;
+            return true;
+        });
+
+        const isFiltered = this._filterYear || this._filterMonth;
+        const summary = isFiltered
+            ? incomeDb.getSummaryByRiderFiltered(filteredWeeks)
+            : incomeDb.getSummaryByRider();
+
+        const totalBaemin  = summary.reduce((s, r) => s + r.baemin,  0);
         const totalCoupang = summary.reduce((s, r) => s + r.coupang, 0);
-        const totalAll = totalBaemin + totalCoupang;
+        const totalAll     = totalBaemin + totalCoupang;
+
+        const periodLabel = isFiltered
+            ? `${this._filterYear || '전체'} ${this._filterMonth ? parseInt(this._filterMonth) + '월' : '전체'} 기준`
+            : '전체 기간';
 
         const rows = summary.map(r => `
             <tr class="border-b border-gray-100 hover:bg-indigo-50">
@@ -55,9 +91,27 @@ const incomeApp = {
                 <td class="py-3 px-4 text-teal-700 font-mono">${r.baemin.toLocaleString()}원</td>
                 <td class="py-3 px-4 text-red-600 font-mono">${r.coupang.toLocaleString()}원</td>
                 <td class="py-3 px-4 font-black text-indigo-700 font-mono">${r.total.toLocaleString()}원</td>
-            </tr>`).join('') || `<tr><td colspan="5" class="text-center py-8 text-gray-400">등록된 라이더 또는 정산 데이터가 없습니다.</td></tr>`;
+            </tr>`).join('') || `<tr><td colspan="5" class="text-center py-8 text-gray-400">해당 기간에 정산 데이터가 없습니다.</td></tr>`;
 
         return `
+            <!-- 기간 필터 -->
+            <div class="glass-panel rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 mb-5">
+                <div class="flex flex-wrap items-center gap-3">
+                    <span class="text-sm font-bold text-indigo-700 whitespace-nowrap">📅 기간 선택</span>
+                    <select id="filter-year" class="border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none bg-white">
+                        ${yearOptions}
+                    </select>
+                    <select id="filter-month" class="border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none bg-white">
+                        ${monthOptions}
+                    </select>
+                    <button onclick="incomeApp._applyFilter()" class="px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-all flex items-center gap-2">
+                        <i data-lucide="search" class="w-4 h-4"></i> 검색
+                    </button>
+                    ${isFiltered ? `<button onclick="incomeApp._clearFilter()" class="px-4 py-2 bg-white text-gray-500 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-all">초기화</button>` : ''}
+                    <span class="text-xs text-indigo-500 ml-auto">${periodLabel} · 해당 주차 ${filteredWeeks.length}개</span>
+                </div>
+            </div>
+
             <div class="grid grid-cols-3 gap-4 mb-6">
                 <div class="bg-teal-50 border border-teal-200 rounded-xl p-5">
                     <p class="text-xs font-bold text-teal-600 mb-1">배민 총 수입</p>
@@ -74,7 +128,7 @@ const incomeApp = {
             </div>
             <div class="glass-panel rounded-xl border border-gray-100 p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="font-bold text-gray-800">라이더별 수입 집계 (${summary.length}명)</h3>
+                    <h3 class="font-bold text-gray-800">라이더별 수입 집계 <span class="text-indigo-500">(${summary.length}명 / ${periodLabel})</span></h3>
                     <button onclick="incomeApp._downloadSummary()" class="flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-all">
                         <i data-lucide="download" class="w-4 h-4 mr-2"></i> 엑셀 다운로드
                     </button>
@@ -102,6 +156,23 @@ const incomeApp = {
                     </table>
                 </div>
             </div>`;
+    },
+
+    _applyFilter() {
+        const y = document.getElementById('filter-year')?.value  || '';
+        const m = document.getElementById('filter-month')?.value || '';
+        this._filterYear  = y;
+        this._filterMonth = m;
+        // 탭 전환 없이 body 영역만 재렌더
+        const body = document.getElementById('income-body');
+        if (body) { body.innerHTML = this._renderSummary(); lucide.createIcons(); }
+    },
+
+    _clearFilter() {
+        this._filterYear  = '';
+        this._filterMonth = '';
+        const body = document.getElementById('income-body');
+        if (body) { body.innerHTML = this._renderSummary(); lucide.createIcons(); }
     },
 
     // ── 탭: 라이더 관리 ──────────────────────────────────
@@ -351,8 +422,22 @@ const incomeApp = {
     },
 
     _downloadSummary() {
-        const summary = incomeDb.getSummaryByRider();
+        // 현재 필터가 적용된 상태로 다운로드
+        const allWeeks = incomeDb.getUniqueWeekLabels();
+        const filteredWeeks = (this._filterYear || this._filterMonth)
+            ? allWeeks.filter(w => {
+                const parts = w.split('-');
+                const y = parts[0] || '';
+                const m = (parts[1] || '').padStart(2,'0');
+                if (this._filterYear  && y !== this._filterYear)  return false;
+                if (this._filterMonth && m !== this._filterMonth) return false;
+                return true;
+              })
+            : allWeeks;
+        const summary = (this._filterYear || this._filterMonth)
+            ? incomeDb.getSummaryByRiderFiltered(filteredWeeks)
+            : incomeDb.getSummaryByRider();
         if (summary.length === 0) { alert('다운로드할 데이터가 없습니다.'); return; }
-        IncomeExcelParser.downloadSummaryExcel(summary, incomeDb.getUniqueWeekLabels());
+        IncomeExcelParser.downloadSummaryExcel(summary, filteredWeeks);
     }
 };
