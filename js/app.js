@@ -168,6 +168,10 @@ const app = {
                 titleArea.innerText = '전체 시스템 등록 현황 및 이력 (Admin)';
                 this.renderRegistrationHistory(contentArea);
                 break;
+            case 'income-manager':
+                titleArea.innerText = '라이더 소득신고 정산 관리';
+                incomeApp.render(contentArea);
+                break;
         }
     },
 
