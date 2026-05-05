@@ -170,8 +170,10 @@ const incomeDb = {
      */
     getSummaryByRiderFiltered(weekLabels) {
         const riders = this.getRiders();
+        // weekLabels가 null/undefined → 전체 반환
+        // weekLabels가 빈 배열 []  → 0건 반환 (해당 기간 데이터 없음)
         const settlements = this.getSettlements().filter(b =>
-            !weekLabels || weekLabels.length === 0 || weekLabels.includes(b.weekLabel)
+            !weekLabels || weekLabels.includes(b.weekLabel)
         );
 
         const map = {};

@@ -6,6 +6,10 @@ const incomeApp = {
     _tab: 'summary', // 'summary' | 'riders' | 'upload' | 'batches'
     _filterYear: '',   // 선택된 연도 ('' = 전체)
     _filterMonth: '',  // 선택된 월 ('' = 전체)
+    // 업로드 행 상태 (플랫폼별 독립)
+    _baeminRows: [{ id: 1 }],
+    _coupangRows: [{ id: 1 }],
+    _nextRowId: 2,
 
     render(container) {
         const tabs = [
@@ -237,36 +241,329 @@ const incomeApp = {
 
     // ── 탭: 정산서 업로드 ─────────────────────────────────
     _renderUpload() {
+        const makeRows = (rows, platform) => rows.map(r => `
+            <div id="upload-row-${platform}-${r.id}" class="flex gap-2 items-center mb-2">
+                <input type="text" id="week-${platform}-${r.id}"
+                    placeholder="주차 (예: 2026-04-4)"
+                    class="w-36 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-${platform === 'baemin' ? 'teal' : 'red'}-400 focus:outline-none flex-shrink-0">
+                <input type="file" id="file-${platform}-${r.id}" accept=".xlsx,.xls" multiple
+                    onchange="incomeApp._autoDetectWeek('${platform}', ${r.id}, this)"
+                    class="flex-1 text-sm border rounded-lg px-3 py-2">
+                <button onclick="incomeApp._removeUploadRow('${platform}',${r.id})"
+                    class="flex-shrink-0 w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg hover:border-red-300 transition-all">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>`).join('');
+
         return `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
+                <!-- 배민 -->
                 <div class="glass-panel rounded-xl border border-teal-200 p-6 relative overflow-hidden">
                     <div class="absolute top-0 left-0 w-1.5 h-full bg-teal-500"></div>
                     <h3 class="font-bold text-gray-800 mb-1 flex items-center">
                         <i data-lucide="bike" class="w-5 h-5 mr-2 text-teal-600"></i> 배민 주정산서 업로드
                     </h3>
-                    <p class="text-xs text-gray-500 mb-4">시트: "을지_협력사_소속_라이더정산_확인용"<br>컬럼: 라이더명, user ID, 라이더별정산금액</p>
-                    <input type="text" id="baemin-week" placeholder="주차 입력 (예: 2026-05-01)" class="w-full border rounded-lg px-3 py-2 text-sm mb-3 focus:ring-2 focus:ring-teal-500 focus:outline-none">
-                    <input type="file" id="file-income-baemin" accept=".xlsx,.xls" multiple class="w-full text-sm border rounded-lg px-3 py-2 mb-1">
-                    <p class="text-xs text-teal-600 mb-3">※ Ctrl(또는 Cmd)키로 여러 파일 동시 선택 가능</p>
-                    <button onclick="incomeApp._uploadSettlement('baemin')" class="w-full bg-teal-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-teal-700 transition-all">
-                        파싱 및 반영
+                    <p class="text-xs text-gray-500 mb-3">시트: "을지_협력사_소속_라이더정산_확인용"<br>컬럼: 라이더명, user ID, 라이더별정산금액</p>
+
+                    <!-- 배민 날짜→주차 변환기 -->
+                    <div class="bg-teal-50 border border-teal-200 rounded-lg p-3 mb-4">
+                        <p class="text-xs font-bold text-teal-700 mb-2">🗓️ 날짜범위 → 주차 자동 변환</p>
+                        <div class="flex gap-2">
+                            <input type="text" id="baemin-date-range"
+                                placeholder="20260422~20260428"
+                                class="flex-1 border border-teal-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-teal-400 focus:outline-none bg-white">
+                            <button onclick="incomeApp._convertBaeminDate()"
+                                class="px-3 py-1.5 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700 transition-all whitespace-nowrap">
+                                변환
+                            </button>
+                        </div>
+                        <p id="baemin-convert-result" class="text-xs text-teal-700 mt-1.5 hidden"></p>
+                        <p class="text-xs text-teal-500 mt-1">※ 주차 형식: <span class="font-mono font-bold">2026-04-4</span> (년-월-주차)</p>
+                    </div>
+
+                    <div id="baemin-upload-rows">
+                        ${makeRows(this._baeminRows, 'baemin')}
+                    </div>
+
+                    <button onclick="incomeApp._addUploadRow('baemin')"
+                        class="w-full mt-2 mb-4 py-2 border-2 border-dashed border-teal-300 text-teal-600 text-sm font-bold rounded-lg hover:bg-teal-50 transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i> 주차 추가
+                    </button>
+
+                    <button onclick="incomeApp._uploadAllRows('baemin')"
+                        class="w-full bg-teal-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-teal-700 transition-all">
+                        전체 파싱 및 반영
                     </button>
                 </div>
+
+                <!-- 쿠팡 -->
                 <div class="glass-panel rounded-xl border border-red-200 p-6 relative overflow-hidden">
                     <div class="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
                     <h3 class="font-bold text-gray-800 mb-1 flex items-center">
                         <i data-lucide="truck" class="w-5 h-5 mr-2 text-red-600"></i> 쿠팡 주정산서 업로드
                     </h3>
-                    <p class="text-xs text-gray-500 mb-4">시트: "종합"<br>컬럼: 성함 (홍길동1234), 라이더별실지급액</p>
-                    <input type="text" id="coupang-week" placeholder="주차 입력 (예: 2026-05-01)" class="w-full border rounded-lg px-3 py-2 text-sm mb-3 focus:ring-2 focus:ring-red-500 focus:outline-none">
-                    <input type="file" id="file-income-coupang" accept=".xlsx,.xls" multiple class="w-full text-sm border rounded-lg px-3 py-2 mb-1">
-                    <p class="text-xs text-red-500 mb-3">※ Ctrl(또는 Cmd)키로 여러 파일 동시 선택 가능</p>
-                    <button onclick="incomeApp._uploadSettlement('coupang')" class="w-full bg-red-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-red-700 transition-all">
-                        파싱 및 반영
+                    <p class="text-xs text-gray-500 mb-3">시트: "종합"<br>컬럼: 성함 (홍길동1234), 라이더별실지급액</p>
+
+                    <!-- 쿠팡 형식 안내 -->
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                        <p class="text-xs font-bold text-red-600 mb-1">📌 주차 입력 방법</p>
+                        <p class="text-xs text-red-700">쿠팡 정산서 파일명/제목의 <span class="font-bold">년/월/주차</span>를 그대로 입력하세요.</p>
+                        <div class="mt-2 flex flex-col gap-1">
+                            <p class="text-xs font-mono bg-white border border-red-200 rounded px-2 py-1">
+                                2026년 4월 4주차 → <span class="font-bold text-red-700">2026-04-4</span>
+                            </p>
+                            <p class="text-xs font-mono bg-white border border-red-200 rounded px-2 py-1">
+                                2026년 5월 1주차 → <span class="font-bold text-red-700">2026-05-1</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div id="coupang-upload-rows">
+                        ${makeRows(this._coupangRows, 'coupang')}
+                    </div>
+
+                    <button onclick="incomeApp._addUploadRow('coupang')"
+                        class="w-full mt-2 mb-4 py-2 border-2 border-dashed border-red-300 text-red-500 text-sm font-bold rounded-lg hover:bg-red-50 transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i> 주차 추가
+                    </button>
+
+                    <button onclick="incomeApp._uploadAllRows('coupang')"
+                        class="w-full bg-red-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-red-700 transition-all">
+                        전체 파싱 및 반영
                     </button>
                 </div>
+
             </div>
-            <div id="income-upload-result" class="hidden"></div>`;
+            <div id="income-upload-result"></div>`;
+    },
+
+    // ── 업로드 행 관리 ────────────────────────────────────
+    _addUploadRow(platform) {
+        const id = this._nextRowId++;
+        if (platform === 'baemin') this._baeminRows.push({ id });
+        else this._coupangRows.push({ id });
+
+        // 행만 DOM에 직접 추가 (전체 재렌더 없이)
+        const container = document.getElementById(`${platform}-upload-rows`);
+        if (!container) return;
+        const div = document.createElement('div');
+        div.id = `upload-row-${platform}-${id}`;
+        div.className = 'flex gap-2 items-center mb-2';
+        div.innerHTML = `
+            <input type="text" id="week-${platform}-${id}"
+                placeholder="주차 (예: 2026-04-4)"
+                class="w-36 border rounded-lg px-3 py-2 text-sm flex-shrink-0">
+            <input type="file" id="file-${platform}-${id}" accept=".xlsx,.xls" multiple
+                onchange="incomeApp._autoDetectWeek('${platform}', ${id}, this)"
+                class="flex-1 text-sm border rounded-lg px-3 py-2">
+            <button onclick="incomeApp._removeUploadRow('${platform}',${id})"
+                class="flex-shrink-0 w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 border border-gray-200 rounded-lg hover:border-red-300 transition-all">
+                <i data-lucide='x' class='w-4 h-4'></i>
+            </button>`;
+        container.appendChild(div);
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    // ── 파일명 자동 주차 감지 ──────────────────────────────
+    _autoDetectWeek(platform, rowId, fileInput) {
+        const weekEl = document.getElementById(`week-${platform}-${rowId}`);
+        if (!weekEl || weekEl.value.trim()) return; // 이미 입력된 경우 덮어쓰지 않음
+
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const label = this._parseWeekFromFilename(file.name, platform);
+        if (label) {
+            weekEl.value = label;
+            weekEl.classList.add('ring-2', platform === 'baemin' ? 'ring-teal-400' : 'ring-red-400');
+            setTimeout(() => weekEl.classList.remove('ring-2', 'ring-teal-400', 'ring-red-400'), 2000);
+        }
+    },
+
+    /**
+     * 파일명에서 주차 레이블(YYYY-MM-W) 추출
+     * 배민:  20260422~20260428_...xlsx  → 2026-04-4
+     * 쿠팡:  2026년4월4주차_...xlsx      → 2026-04-4
+     *        플루체스페이스_경남_2026_04_4.xlsx 등 다양한 패턴 대응
+     */
+    _parseWeekFromFilename(filename, platform) {
+        // ── 쿠팡: 한글 주차 패턴 ────────────────────────────
+        // "2026년4월4주차" / "2026년 4월 4주차"
+        let m = filename.match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*주/);
+        if (m) {
+            const [, y, mo, w] = m;
+            return `${y}-${mo.padStart(2,'0')}-${w}`;
+        }
+
+        // 쿠팡: 숫자만 패턴 "2026_04_4" / "2026/04/4"
+        m = filename.match(/(\d{4})[_\/\-](\d{1,2})[_\/\-](\d{1})(?:[^\d]|$)/);
+        if (m) {
+            const [, y, mo, w] = m;
+            // w가 1~5 범위일 때만 주차로 해석
+            if (parseInt(w) >= 1 && parseInt(w) <= 5) {
+                return `${y}-${mo.padStart(2,'0')}-${w}`;
+            }
+        }
+
+        // ── 배민: 날짜 범위 패턴 ────────────────────────────
+        // "20260422~20260428" / "2026-04-22~2026-04-28"
+        m = filename.match(/(\d{4})[\-]?(\d{2})[\-]?(\d{2})[~_\s]/);
+        if (m) {
+            const [, y, mo, day] = m;
+            const weekNum = Math.ceil(parseInt(day, 10) / 7);
+            return `${y}-${mo}-${weekNum}`;
+        }
+
+        return null; // 패턴 미감지
+    },
+
+    // 배민 날짜범위 → 주차 변환 (수동 변환기)
+    _convertBaeminDate() {
+        const input = document.getElementById('baemin-date-range');
+        const resultEl = document.getElementById('baemin-convert-result');
+        const raw = (input?.value || '').trim();
+        if (!raw) { alert('날짜범위를 입력해주세요. (예: 20260422~20260428)'); return; }
+
+        // "20260422~20260428" 또는 "2026-04-22~2026-04-28" 형식 모두 지원
+        const cleaned = raw.replace(/[^0-9~\-]/g, '');
+        const startStr = cleaned.split('~')[0].replace(/-/g, '');
+
+        if (startStr.length < 8) {
+            alert('날짜 형식이 올바르지 않습니다.\n입력 예시: 20260422~20260428');
+            return;
+        }
+
+        const year  = startStr.slice(0, 4);
+        const month = startStr.slice(4, 6);
+        const day   = parseInt(startStr.slice(6, 8), 10);
+
+        // 해당 월의 주차 계산: ceil(일 / 7)
+        const weekNum = Math.ceil(day / 7);
+        const weekLabel = `${year}-${month}-${weekNum}`;
+
+        // 결과 표시
+        resultEl.textContent = `✅ 변환 결과: ${weekLabel} (${parseInt(month)}월 ${weekNum}주차)`;
+        resultEl.classList.remove('hidden');
+
+        // 첫 번째 빈 주차 입력란에 자동 입력
+        let filled = false;
+        for (const row of this._baeminRows) {
+            const el = document.getElementById(`week-baemin-${row.id}`);
+            if (el && !el.value.trim()) {
+                el.value = weekLabel;
+                el.classList.add('ring-2', 'ring-teal-400');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-teal-400'), 1500);
+                filled = true;
+                break;
+            }
+        }
+        if (!filled) {
+            // 빈 칸이 없으면 클립보드에 복사
+            navigator.clipboard?.writeText(weekLabel).then(() => {
+                resultEl.textContent += ' (클립보드에 복사됨)';
+            }).catch(() => {
+                resultEl.textContent += ` → 직접 복사: ${weekLabel}`;
+            });
+        }
+    },
+
+    _removeUploadRow(platform, id) {
+        if (platform === 'baemin') {
+            if (this._baeminRows.length <= 1) return; // 최소 1행 유지
+            this._baeminRows = this._baeminRows.filter(r => r.id !== id);
+        } else {
+            if (this._coupangRows.length <= 1) return;
+            this._coupangRows = this._coupangRows.filter(r => r.id !== id);
+        }
+        const el = document.getElementById(`upload-row-${platform}-${id}`);
+        if (el) el.remove();
+    },
+
+    async _uploadAllRows(platform) {
+        const rows = platform === 'baemin' ? this._baeminRows : this._coupangRows;
+        const riders = incomeDb.getRiders();
+        if (riders.length === 0) { alert('먼저 라이더를 등록해주세요.'); return; }
+
+        const resultDiv = document.getElementById('income-upload-result');
+        resultDiv.innerHTML = `<div class="glass-panel rounded-xl p-5 text-center text-gray-500">⏳ 파싱 중...</div>`;
+
+        const results = [];
+        let totalSaved = 0;
+
+        for (const row of rows) {
+            const weekEl = document.getElementById(`week-${platform}-${row.id}`);
+            const fileEl = document.getElementById(`file-${platform}-${row.id}`);
+            const weekLabel = weekEl?.value.trim();
+            const files = Array.from(fileEl?.files || []);
+
+            if (!weekLabel || files.length === 0) {
+                results.push({ week: weekLabel || '(주차 미입력)', status: 'skip', msg: '주차 또는 파일 미입력' });
+                continue;
+            }
+
+            const allMatched = [], allUnmatched = [];
+            const fileErrors = [];
+
+            for (const file of files) {
+                try {
+                    const parsed = platform === 'baemin'
+                        ? await IncomeExcelParser.parseBaemin(file, riders)
+                        : await IncomeExcelParser.parseCoupang(file, riders);
+                    allMatched.push(...parsed.matched);
+                    allUnmatched.push(...parsed.unmatched);
+                } catch (err) {
+                    fileErrors.push({ name: file.name, error: err.message });
+                }
+            }
+
+            // 라이더별 금액 합산
+            const mergedMap = {};
+            allMatched.forEach(rec => {
+                if (!mergedMap[rec.riderId]) mergedMap[rec.riderId] = { ...rec };
+                else mergedMap[rec.riderId].amount += rec.amount;
+            });
+            const mergedMatched = Object.values(mergedMap);
+
+            if (mergedMatched.length > 0) {
+                incomeDb.addSettlementBatch(platform, weekLabel, mergedMatched);
+                totalSaved++;
+            }
+
+            results.push({
+                week: weekLabel,
+                status: mergedMatched.length > 0 ? 'ok' : 'warn',
+                matched: mergedMatched.length,
+                unmatched: allUnmatched.length,
+                errors: fileErrors,
+                unmatchedNames: allUnmatched.map(u => u.name || u.rawName).join(', ')
+            });
+        }
+
+        const rowsHtml = results.map(r => {
+            if (r.status === 'skip') return `
+                <div class="flex items-center gap-3 py-2 border-b border-gray-100">
+                    <span class="text-gray-400 text-xs">⏭️</span>
+                    <span class="text-sm text-gray-500">${r.week} — ${r.msg}</span>
+                </div>`;
+            const icon = r.status === 'ok' ? '✅' : '⚠️';
+            const color = r.status === 'ok' ? 'text-green-700' : 'text-yellow-700';
+            const errHtml = r.errors?.map(e => `<span class="text-red-600 text-xs">❌ ${e.name}: ${e.error}</span>`).join('');
+            return `
+                <div class="flex flex-wrap items-start gap-2 py-2 border-b border-gray-100">
+                    <span class="text-sm">${icon}</span>
+                    <span class="font-bold text-sm text-gray-800">${r.week}</span>
+                    <span class="text-sm ${color}">매칭: ${r.matched}명 | 미매칭: ${r.unmatched}건</span>
+                    ${r.unmatchedNames ? `<span class="text-xs text-yellow-600">(${r.unmatchedNames})</span>` : ''}
+                    ${errHtml || ''}
+                </div>`;
+        }).join('');
+
+        resultDiv.innerHTML = `
+            <div class="glass-panel rounded-xl border border-gray-100 p-6">
+                <p class="font-bold text-gray-800 mb-3">📋 업로드 결과 — ${totalSaved}개 주차 저장 완료</p>
+                ${rowsHtml}
+            </div>`;
     },
 
     // ── 탭: 업로드 내역 ───────────────────────────────────
