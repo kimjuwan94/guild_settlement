@@ -30,9 +30,26 @@ const IncomeExcelParser = {
                 try {
                     const wb = XLSX.read(e.target.result, { type: 'array' });
 
-                    const sheetName = wb.SheetNames.find(n =>
-                        n.includes('을지') || n.includes('라이더정산') || n.includes('협력사')
-                    );
+                    // ★ 시트 선택: 우선순위 기반 (가장 구체적인 이름 우선)
+                    // 최후 수단: 모든 시트를 스캔하여 "라이더명" 헤더가 실제로 있는 시트 탐색
+                    const _norm = (s) => (s||'').toString().normalize('NFC').replace(/\s/g,'').trim();
+
+                    let sheetName =
+                        // 1순위: "라이더정산" + "확인" 둘 다 포함
+                        wb.SheetNames.find(n => n.includes('라이더정산') && n.includes('확인')) ||
+                        // 2순위: "소속" + "협력사" 둘 다 포함
+                        wb.SheetNames.find(n => n.includes('소속') && n.includes('협력사')) ||
+                        // 3순위: "을지" 포함 (단독)
+                        wb.SheetNames.find(n => n.includes('을지')) ||
+                        // 4순위: 모든 시트 스캔 → "라이더명" 헤더가 실제로 있는 시트
+                        wb.SheetNames.find(n => {
+                            const ws2 = wb.Sheets[n];
+                            const raw = XLSX.utils.sheet_to_json(ws2, { header: 1, defval: '' });
+                            return raw.slice(0, 50).some(row =>
+                                row.map(c => _norm(String(c))).some(c => c.includes('라이더명'))
+                            );
+                        });
+
                     if (!sheetName) {
                         reject(new Error(
                             `배민 정산 시트를 찾을 수 없습니다.\n` +
