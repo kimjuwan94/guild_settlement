@@ -175,7 +175,8 @@ const incomeApp = {
                     </h3>
                     <p class="text-xs text-gray-500 mb-4">시트: "을지_협력사_소속_라이더정산_확인용"<br>컬럼: 라이더명, user ID, 라이더별정산금액</p>
                     <input type="text" id="baemin-week" placeholder="주차 입력 (예: 2026-05-01)" class="w-full border rounded-lg px-3 py-2 text-sm mb-3 focus:ring-2 focus:ring-teal-500 focus:outline-none">
-                    <input type="file" id="file-income-baemin" accept=".xlsx,.xls" class="w-full text-sm border rounded-lg px-3 py-2 mb-3">
+                    <input type="file" id="file-income-baemin" accept=".xlsx,.xls" multiple class="w-full text-sm border rounded-lg px-3 py-2 mb-1">
+                    <p class="text-xs text-teal-600 mb-3">※ Ctrl(또는 Cmd)키로 여러 파일 동시 선택 가능</p>
                     <button onclick="incomeApp._uploadSettlement('baemin')" class="w-full bg-teal-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-teal-700 transition-all">
                         파싱 및 반영
                     </button>
@@ -187,7 +188,8 @@ const incomeApp = {
                     </h3>
                     <p class="text-xs text-gray-500 mb-4">시트: "종합"<br>컬럼: 성함 (홍길동1234), 라이더별실지급액</p>
                     <input type="text" id="coupang-week" placeholder="주차 입력 (예: 2026-05-01)" class="w-full border rounded-lg px-3 py-2 text-sm mb-3 focus:ring-2 focus:ring-red-500 focus:outline-none">
-                    <input type="file" id="file-income-coupang" accept=".xlsx,.xls" class="w-full text-sm border rounded-lg px-3 py-2 mb-3">
+                    <input type="file" id="file-income-coupang" accept=".xlsx,.xls" multiple class="w-full text-sm border rounded-lg px-3 py-2 mb-1">
+                    <p class="text-xs text-red-500 mb-3">※ Ctrl(또는 Cmd)키로 여러 파일 동시 선택 가능</p>
                     <button onclick="incomeApp._uploadSettlement('coupang')" class="w-full bg-red-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-red-700 transition-all">
                         파싱 및 반영
                     </button>
@@ -272,52 +274,73 @@ const incomeApp = {
         const weekEl = document.getElementById(`${platform}-week`);
         const resultDiv = document.getElementById('income-upload-result');
 
-        if (!fileEl.files[0]) { alert('파일을 선택해주세요.'); return; }
+        const files = Array.from(fileEl.files);
+        if (files.length === 0) { alert('파일을 선택해주세요.'); return; }
         if (!weekEl.value.trim()) { alert('주차를 입력해주세요. (예: 2026-05-01)'); return; }
 
         const riders = incomeDb.getRiders();
         if (riders.length === 0) { alert('먼저 라이더를 등록해주세요.'); return; }
 
         resultDiv.classList.remove('hidden');
-        resultDiv.innerHTML = `<div class="glass-panel rounded-xl p-6 text-center text-gray-500">파싱 중...</div>`;
+        resultDiv.innerHTML = `<div class="glass-panel rounded-xl p-6 text-center text-gray-500">⏳ ${files.length}개 파일 파싱 중...</div>`;
 
-        try {
-            let parsed;
-            if (platform === 'baemin') {
-                parsed = await IncomeExcelParser.parseBaemin(fileEl.files[0], riders);
-            } else {
-                parsed = await IncomeExcelParser.parseCoupang(fileEl.files[0], riders);
+        // 여러 파일 결과 합산
+        const allMatched = [];
+        const allUnmatched = [];
+        const fileErrors = [];
+
+        for (const file of files) {
+            try {
+                let parsed;
+                if (platform === 'baemin') {
+                    parsed = await IncomeExcelParser.parseBaemin(file, riders);
+                } else {
+                    parsed = await IncomeExcelParser.parseCoupang(file, riders);
+                }
+                allMatched.push(...parsed.matched);
+                allUnmatched.push(...parsed.unmatched);
+            } catch (err) {
+                fileErrors.push({ name: file.name, error: err.message });
             }
-
-            if (parsed.matched.length === 0) {
-                resultDiv.innerHTML = `
-                    <div class="glass-panel rounded-xl p-6 border border-yellow-200 bg-yellow-50">
-                        <p class="font-bold text-yellow-800 mb-2">⚠️ 매칭된 라이더가 없습니다.</p>
-                        <p class="text-sm text-yellow-700">미매칭: ${parsed.unmatched.length}건 (라이더 등록 정보를 확인해주세요)</p>
-                    </div>`;
-                return;
-            }
-
-            incomeDb.addSettlementBatch(platform, weekEl.value.trim(), parsed.matched);
-
-            const unmatchedHtml = parsed.unmatched.length > 0
-                ? `<p class="text-sm text-yellow-700 mt-2">⚠️ 미매칭 ${parsed.unmatched.length}건: ${parsed.unmatched.map(u => u.name || u.rawName).join(', ')}</p>`
-                : '';
-
-            resultDiv.innerHTML = `
-                <div class="glass-panel rounded-xl p-6 border border-green-200 bg-green-50">
-                    <p class="font-bold text-green-800 mb-1">✅ 업로드 완료!</p>
-                    <p class="text-sm text-green-700">매칭 성공: ${parsed.matched.length}건 | 미매칭: ${parsed.unmatched.length}건</p>
-                    ${unmatchedHtml}
-                </div>`;
-
-        } catch (err) {
-            resultDiv.innerHTML = `
-                <div class="glass-panel rounded-xl p-6 border border-red-200 bg-red-50">
-                    <p class="font-bold text-red-800 mb-1">❌ 오류 발생</p>
-                    <p class="text-sm text-red-700 whitespace-pre-wrap">${err.message}</p>
-                </div>`;
         }
+
+        // 라이더별 금액 합산 (같은 라이더가 여러 파일에 있을 경우)
+        const mergedMap = {};
+        allMatched.forEach(rec => {
+            if (!mergedMap[rec.riderId]) {
+                mergedMap[rec.riderId] = { ...rec };
+            } else {
+                mergedMap[rec.riderId].amount += rec.amount;
+            }
+        });
+        const mergedMatched = Object.values(mergedMap);
+
+        if (mergedMatched.length === 0 && fileErrors.length === 0) {
+            resultDiv.innerHTML = `
+                <div class="glass-panel rounded-xl p-6 border border-yellow-200 bg-yellow-50">
+                    <p class="font-bold text-yellow-800 mb-2">⚠️ 매칭된 라이더가 없습니다.</p>
+                    <p class="text-sm text-yellow-700">미매칭: ${allUnmatched.length}건 — 라이더 등록 정보(배민ID/쿠팡뒷번호)를 확인해주세요.</p>
+                </div>`;
+            return;
+        }
+
+        if (mergedMatched.length > 0) {
+            incomeDb.addSettlementBatch(platform, weekEl.value.trim(), mergedMatched);
+        }
+
+        const unmatchedHtml = allUnmatched.length > 0
+            ? `<p class="text-sm text-yellow-700 mt-2">⚠️ 미매칭 ${allUnmatched.length}건: ${allUnmatched.map(u => u.name || u.rawName).join(', ')}</p>`
+            : '';
+        const errorHtml = fileErrors.map(fe =>
+            `<p class="text-sm text-red-700 mt-1">❌ ${fe.name}: ${fe.error}</p>`
+        ).join('');
+
+        resultDiv.innerHTML = `
+            <div class="glass-panel rounded-xl p-6 border border-green-200 bg-green-50">
+                <p class="font-bold text-green-800 mb-1">✅ 업로드 완료! (${files.length}개 파일)</p>
+                <p class="text-sm text-green-700">매칭 성공: ${mergedMatched.length}명 | 미매칭: ${allUnmatched.length}건 | 오류: ${fileErrors.length}건</p>
+                ${unmatchedHtml}${errorHtml}
+            </div>`;
     },
 
     _deleteBatch(batchId, weekLabel) {
