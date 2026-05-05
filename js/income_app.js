@@ -404,13 +404,27 @@ const incomeApp = {
                        '구미','포항','진주','마산','통영','거제','양산','밀양','제주',
                        '종로','마포','영등포','동작','관악','서초','송파'];
         const name = filename.replace(/\.xlsx?$/i, '');
+
+        // ★ 알려진 지역명 발견 시 → 뒤에 붙은 한글·영문·숫자까지 연장 추출
+        // 예: "김해북부" / "김해A" / "김해남부" / "강남3구역" 등
+        let bestMatch = '';
         for (const region of KNOWN) {
-            if (name.includes(region)) return region;
+            if (!name.includes(region)) continue;
+            // 지역명 + 이후 한글/영문 연속 문자 모두 포함
+            const rx = new RegExp(region + '[가-힣A-Za-z0-9]*');
+            const m = name.match(rx);
+            if (m && m[0].length > bestMatch.length) {
+                bestMatch = m[0];
+            }
         }
-        const stopWords = ['주식회사','플루체','정산서','확인용','협력사','소속','라이더','배달','쿠팡','배민','스페이스','파트너','파트스'];
+        if (bestMatch) return bestMatch;
+
+        // fallback: 구분자로 나눠 한글 2~5자 토큰 중 마지막 의미있는 것
+        const stopWords = ['주식회사','플루체','정산서','확인용','협력사','소속','라이더',
+                           '배달','쿠팡','배민','스페이스','파트너','파트스'];
         const tokens = name.split(/[_\s\-~]/)
-            .map(t => t.replace(/[^가-힣]/g, '').trim())
-            .filter(t => t.length >= 2 && t.length <= 5 && !stopWords.includes(t));
+            .map(t => t.replace(/[^가-힣A-Za-z0-9]/g, '').trim())
+            .filter(t => t.length >= 2 && t.length <= 8 && !stopWords.includes(t));
         return tokens[tokens.length - 1] || '';
     },
 
