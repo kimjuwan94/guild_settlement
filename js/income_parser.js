@@ -1,11 +1,11 @@
 /**
  * =====================================================
  *  INCOME EXCEL PARSER - 소득신고 정산서 전용 파서
+ *  핵심 수정: 쿠팡 정산서의 다중 헤더 행 처리
  * =====================================================
  */
 const IncomeExcelParser = {
 
-    // ── 유틸 ────────────────────────────────────────────
     // 한글 NFC/NFD 정규화 + 공백 제거
     _norm(str) {
         return (str || '').toString().normalize('NFC').replace(/\s/g, '').trim();
@@ -13,14 +13,9 @@ const IncomeExcelParser = {
 
     _parseAmount(val) {
         if (!val && val !== 0) return 0;
-        const str = val.toString().replace(/,/g, '').replace(/원/g, '').trim();
+        const str = val.toString().replace(/,/g, '').replace(/[원\s]/g, '').trim();
         const num = parseFloat(str);
         return isNaN(num) ? 0 : Math.round(num);
-    },
-
-    // ── 컬럼명 동적 감지 헬퍼 ───────────────────────────
-    _findKey(keys, candidates) {
-        return keys.find(k => candidates.some(c => k.includes(c))) || candidates[0];
     },
 
     /**
@@ -48,31 +43,47 @@ const IncomeExcelParser = {
                     }
 
                     const ws = wb.Sheets[sheetName];
-                    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-                    if (rows.length === 0) { resolve({ matched: [], unmatched: [], sheetName }); return; }
 
-                    const keys = Object.keys(rows[0]);
-                    const nameKey   = this._findKey(keys, ['라이더명', '라이더 명', '이름']);
-                    const idKey     = this._findKey(keys, ['user ID', 'userID', 'User ID', '아이디', 'ID']);
-                    const amountKey = this._findKey(keys, ['라이더별정산금액', '정산금액', '지급액']);
+                    // 원시 배열로 파싱 → 헤더 행 탐색
+                    const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                    
+                    // 헤더 행 찾기: "라이더명" 또는 "user ID" 포함 행
+                    let headerRowIdx = -1;
+                    let headers = [];
+                    for (let i = 0; i < Math.min(rawRows.length, 20); i++) {
+                        const row = rawRows[i].map(c => this._norm(String(c)));
+                        if (row.some(c => c.includes('라이더명') || c.includes('userID') || c.includes('userid'))) {
+                            headerRowIdx = i;
+                            headers = rawRows[i].map(c => String(c).trim());
+                            break;
+                        }
+                    }
 
+                    if (headerRowIdx === -1) {
+                        // 헤더를 못 찾으면 기본 json 파싱으로 폴백
+                        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+                        return this._parseBaeminRows(rows, riders, sheetName, resolve);
+                    }
+
+                    // 헤더 이후 데이터 행 파싱
+                    const nameIdx   = headers.findIndex(h => h.includes('라이더명') || h.includes('라이더 명'));
+                    const idIdx     = headers.findIndex(h => h.toLowerCase().includes('user id') || h.toLowerCase().includes('userid') || h === 'ID');
+                    const amountIdx = headers.findIndex(h => h.includes('라이더별정산금액') || h.includes('정산금액'));
+
+                    const dataRows = rawRows.slice(headerRowIdx + 1);
                     const matched = [], unmatched = [];
 
-                    rows.forEach((row) => {
-                        const riderName = this._norm(row[nameKey] || '');
-                        const userId    = this._norm(row[idKey] || '');
-                        const amount    = this._parseAmount(row[amountKey] || 0);
+                    dataRows.forEach(row => {
+                        const riderName = this._norm(row[nameIdx] || '');
+                        const userId    = this._norm(row[idIdx] || '');
+                        const amount    = this._parseAmount(row[amountIdx] || 0);
 
                         if ((!riderName && !userId) || amount <= 0) return;
 
                         let rider = null;
-                        // 1단계: 배민ID 매칭
                         if (userId) {
-                            rider = riders.find(r =>
-                                r.baeminId && r.baeminId.trim().toLowerCase() === userId.toLowerCase()
-                            );
+                            rider = riders.find(r => r.baeminId && r.baeminId.trim().toLowerCase() === userId.toLowerCase());
                         }
-                        // 2단계: 이름 매칭 (유니코드 정규화)
                         if (!rider && riderName) {
                             rider = riders.find(r => this._norm(r.name) === riderName);
                         }
@@ -84,7 +95,8 @@ const IncomeExcelParser = {
                         }
                     });
 
-                    resolve({ matched, unmatched, sheetName });
+                    resolve({ matched, unmatched, sheetName, debug: `헤더행: ${headerRowIdx + 1}번째, 컬럼: 라이더명[${nameIdx}] ID[${idIdx}] 금액[${amountIdx}]` });
+
                 } catch (err) { reject(err); }
             };
             reader.onerror = () => reject(new Error('파일 읽기 실패'));
@@ -92,10 +104,34 @@ const IncomeExcelParser = {
         });
     },
 
+    _parseBaeminRows(rows, riders, sheetName, resolve) {
+        if (rows.length === 0) { resolve({ matched: [], unmatched: [], sheetName }); return; }
+        const keys = Object.keys(rows[0]);
+        const nameKey   = keys.find(k => k.includes('라이더명')) || '라이더명';
+        const idKey     = keys.find(k => k.toLowerCase().includes('user id') || k.toLowerCase() === 'userid') || 'user ID';
+        const amountKey = keys.find(k => k.includes('라이더별정산금액') || k.includes('정산금액')) || '라이더별정산금액';
+        const matched = [], unmatched = [];
+        rows.forEach(row => {
+            const riderName = this._norm(row[nameKey] || '');
+            const userId    = this._norm(row[idKey] || '');
+            const amount    = this._parseAmount(row[amountKey] || 0);
+            if ((!riderName && !userId) || amount <= 0) return;
+            let rider = null;
+            if (userId) rider = riders.find(r => r.baeminId && r.baeminId.trim().toLowerCase() === userId.toLowerCase());
+            if (!rider && riderName) rider = riders.find(r => this._norm(r.name) === riderName);
+            if (rider) matched.push({ riderId: rider.id, name: rider.name, baeminId: userId, amount });
+            else unmatched.push({ name: riderName, baeminId: userId, amount });
+        });
+        resolve({ matched, unmatched, sheetName });
+    },
+
     /**
      * 쿠팡 주정산서 파싱
      * 시트: "종합"
      * 컬럼: 성함 (홍길동1234 형식), 라이더별실지급액
+     *
+     * ★ 핵심 수정: 원시 배열로 파싱 후 "성함" 포함 행을 헤더로 직접 탐색
+     *   (쿠팡 정산서는 상단에 타이틀/병합 행이 여러 줄 있어 기본 파싱 불가)
      */
     async parseCoupang(file, riders) {
         return new Promise((resolve, reject) => {
@@ -104,9 +140,7 @@ const IncomeExcelParser = {
                 try {
                     const wb = XLSX.read(e.target.result, { type: 'array' });
 
-                    const sheetName = wb.SheetNames.find(n =>
-                        n.includes('종합') || n === '종합'
-                    );
+                    const sheetName = wb.SheetNames.find(n => n.includes('종합'));
                     if (!sheetName) {
                         reject(new Error(
                             `쿠팡 정산 시트를 찾을 수 없습니다.\n` +
@@ -117,23 +151,67 @@ const IncomeExcelParser = {
                     }
 
                     const ws = wb.Sheets[sheetName];
-                    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-                    if (rows.length === 0) { resolve({ matched: [], unmatched: [], sheetName }); return; }
 
-                    // 컬럼명 동적 감지
-                    const keys      = Object.keys(rows[0]);
-                    const nameKey   = this._findKey(keys, ['성함', '이름', '성명', '라이더명']);
-                    const amountKey = this._findKey(keys, ['실지급액', '라이더별', '지급액', '정산금액']);
+                    // ★ 원시 2D 배열로 읽기 (병합 셀/다중 헤더 대응)
+                    const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+                    // ★ 헤더 행 탐색: "성함" 또는 "이름" 포함 행을 찾을 때까지 스캔
+                    let headerRowIdx = -1;
+                    let nameColIdx   = -1;
+                    let amountColIdx = -1;
+
+                    for (let i = 0; i < Math.min(rawRows.length, 30); i++) {
+                        const row = rawRows[i];
+                        const normRow = row.map(c => this._norm(String(c)));
+
+                        const ni = normRow.findIndex(c =>
+                            c === '성함' || c === '이름' || c === '성명' || c.includes('성함')
+                        );
+                        if (ni !== -1) {
+                            // 같은 행에서 금액 컬럼도 찾기
+                            const ai = normRow.findIndex(c =>
+                                c.includes('실지급액') || c.includes('라이더별') ||
+                                (c.includes('지급') && c.includes('액'))
+                            );
+                            headerRowIdx = i;
+                            nameColIdx   = ni;
+                            amountColIdx = ai !== -1 ? ai : -1;
+                            break;
+                        }
+                    }
+
+                    // 금액 컬럼을 헤더 행에서 못 찾은 경우 → 다음 행들에서 추가 탐색
+                    if (headerRowIdx !== -1 && amountColIdx === -1) {
+                        // 헤더가 2행으로 나뉜 경우 대비: 다음 행도 확인
+                        const nextRow = rawRows[headerRowIdx + 1] || [];
+                        const normNext = nextRow.map(c => this._norm(String(c)));
+                        amountColIdx = normNext.findIndex(c =>
+                            c.includes('실지급액') || c.includes('라이더별') ||
+                            (c.includes('지급') && c.includes('액'))
+                        );
+                    }
+
+                    if (headerRowIdx === -1) {
+                        reject(new Error(
+                            `"종합" 시트에서 "성함" 컬럼을 찾을 수 없습니다.\n` +
+                            `첫 30행 내용: ${rawRows.slice(0, 5).map(r => r.slice(0, 5).join('|')).join(' / ')}`
+                        ));
+                        return;
+                    }
+
+                    const debugMsg = `시트: ${sheetName} | 헤더행: ${headerRowIdx + 1}번째 | 성함열: ${nameColIdx} | 금액열: ${amountColIdx}`;
 
                     const matched = [], unmatched = [];
+                    const dataRows = rawRows.slice(headerRowIdx + 1);
 
-                    rows.forEach((row) => {
-                        const seongham = this._norm(row[nameKey] || '');
-                        const amount   = this._parseAmount(row[amountKey] || 0);
+                    dataRows.forEach((row) => {
+                        const seongham = this._norm(row[nameColIdx] || '');
+                        const amountRaw = amountColIdx !== -1 ? row[amountColIdx] : 0;
+                        const amount = this._parseAmount(amountRaw);
 
                         if (!seongham || amount <= 0) return;
 
-                        // "홍길동1234" → 이름 + 뒷번호 4자리 분리
+                        // "홍길동1234" → 이름 + 뒷번호 분리
                         const m = seongham.match(/^(.+?)(\d{4})$/);
                         let riderName = seongham;
                         let last4 = '';
@@ -142,10 +220,10 @@ const IncomeExcelParser = {
                             last4 = m[2];
                         }
 
-                        // ── 3단계 매칭 ────────────────────────────────────
+                        // 3단계 매칭
                         let rider = null;
 
-                        // 1단계: 이름 + 쿠팡뒷번호 (가장 정확)
+                        // 1단계: 이름 + 쿠팡뒷번호
                         if (last4) {
                             rider = riders.find(r =>
                                 this._norm(r.name) === riderName &&
@@ -154,9 +232,7 @@ const IncomeExcelParser = {
                         }
                         // 2단계: 쿠팡뒷번호만 (이름 인코딩 차이 보정)
                         if (!rider && last4) {
-                            rider = riders.find(r =>
-                                (r.coupangLast4 || '').trim() === last4
-                            );
+                            rider = riders.find(r => (r.coupangLast4 || '').trim() === last4);
                         }
                         // 3단계: 정규화 이름만
                         if (!rider && riderName) {
@@ -170,7 +246,8 @@ const IncomeExcelParser = {
                         }
                     });
 
-                    resolve({ matched, unmatched, sheetName, nameKey, amountKey });
+                    resolve({ matched, unmatched, sheetName, debug: debugMsg });
+
                 } catch (err) { reject(err); }
             };
             reader.onerror = () => reject(new Error('파일 읽기 실패'));
@@ -189,19 +266,13 @@ const IncomeExcelParser = {
                     const wb = XLSX.read(e.target.result, { type: 'array' });
                     const ws = wb.Sheets[wb.SheetNames[0]];
                     const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-                    const riders = [];
-                    rows.forEach((row) => {
-                        const name         = (row['이름'] || row['성명'] || '').toString().trim();
-                        const phone        = (row['전화번호'] || row['휴대폰'] || row['연락처'] || '').toString().trim();
-                        const residentNo   = (row['주민번호'] || row['주민등록번호'] || '').toString().trim();
-                        const baeminId     = (row['배민ID'] || row['배민아이디'] || row['배민 ID'] || '').toString().trim();
-                        const coupangLast4 = (row['쿠팡뒷번호'] || row['쿠팡 뒷번호'] || row['쿠팡뒷자리'] || '').toString().trim();
-
-                        if (!name || !phone) return;
-                        riders.push({ name, phone, residentNo, baeminId, coupangLast4 });
-                    });
-
+                    const riders = rows.map(row => ({
+                        name:         (row['이름'] || row['성명'] || '').toString().trim(),
+                        phone:        (row['전화번호'] || row['휴대폰'] || row['연락처'] || '').toString().trim(),
+                        residentNo:   (row['주민번호'] || row['주민등록번호'] || '').toString().trim(),
+                        baeminId:     (row['배민ID'] || row['배민아이디'] || row['배민 ID'] || '').toString().trim(),
+                        coupangLast4: (row['쿠팡뒷번호'] || row['쿠팡 뒷번호'] || row['쿠팡뒷자리'] || '').toString().trim(),
+                    })).filter(r => r.name && r.phone);
                     resolve(riders);
                 } catch (err) { reject(err); }
             };
@@ -210,9 +281,6 @@ const IncomeExcelParser = {
         });
     },
 
-    /**
-     * 라이더 등록 양식 엑셀 다운로드
-     */
     downloadRiderTemplate() {
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.json_to_sheet([
@@ -224,22 +292,12 @@ const IncomeExcelParser = {
         XLSX.writeFile(wb, '라이더_등록_양식.xlsx');
     },
 
-    /**
-     * 라이더별 정산 집계 엑셀 다운로드
-     */
     downloadSummaryExcel(summaryRows, weekLabels) {
         const wb = XLSX.utils.book_new();
-
         const ws1 = XLSX.utils.json_to_sheet(summaryRows.map((r, idx) => ({
-            '번호': idx + 1,
-            '이름': r.name,
-            '전화번호': r.phone,
-            '주민번호': r.residentNo,
-            '배민ID': r.baeminId,
-            '쿠팡뒷번호': r.coupangLast4,
-            '배민 수입 합계(원)': r.baemin,
-            '쿠팡 수입 합계(원)': r.coupang,
-            '총 수입 합계(원)': r.total
+            '번호': idx + 1, '이름': r.name, '전화번호': r.phone, '주민번호': r.residentNo,
+            '배민ID': r.baeminId, '쿠팡뒷번호': r.coupangLast4,
+            '배민 수입 합계(원)': r.baemin, '쿠팡 수입 합계(원)': r.coupang, '총 수입 합계(원)': r.total
         })));
         ws1['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
         XLSX.utils.book_append_sheet(wb, ws1, '라이더별_수입_요약');
@@ -248,12 +306,9 @@ const IncomeExcelParser = {
         incomeDb.getSettlements().forEach(b => {
             b.records.forEach(rec => {
                 batchData.push({
-                    '업로드ID': b.batchId,
-                    '플랫폼': b.platform === 'baemin' ? '배달의민족' : '쿠팡이츠',
-                    '주차': b.weekLabel,
-                    '업로드일시': new Date(b.uploadedAt).toLocaleString('ko-KR'),
-                    '라이더명': rec.name,
-                    '금액(원)': rec.amount
+                    '업로드ID': b.batchId, '플랫폼': b.platform === 'baemin' ? '배달의민족' : '쿠팡이츠',
+                    '주차': b.weekLabel, '업로드일시': new Date(b.uploadedAt).toLocaleString('ko-KR'),
+                    '라이더명': rec.name, '금액(원)': rec.amount
                 });
             });
         });

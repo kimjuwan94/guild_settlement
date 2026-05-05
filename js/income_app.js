@@ -340,6 +340,7 @@ const incomeApp = {
                 <p class="font-bold text-green-800 mb-1">✅ 업로드 완료! (${files.length}개 파일)</p>
                 <p class="text-sm text-green-700">매칭 성공: ${mergedMatched.length}명 | 미매칭: ${allUnmatched.length}건 | 오류: ${fileErrors.length}건</p>
                 ${unmatchedHtml}${errorHtml}
+                <p class="text-xs text-gray-400 mt-2">📌 파서 정보: ${files.map((f,i) => f.name).join(', ')}</p>
             </div>`;
     },
 
