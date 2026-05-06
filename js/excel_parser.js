@@ -220,5 +220,30 @@ const ExcelParser = {
             }
         }
         return '';
+    },
+
+    /**
+     * 파일명에서 날짜를 추출하여 수요일 기준 weekName 반환
+     * 예: "2026-04-1.xlsx" → "04.30(수) ~ 05.06(화) 정산"
+     */
+    detectWeekFromFilename(filename) {
+        // YYYY-MM-D 또는 YYYY.MM.D 패턴 추출
+        const m = filename.match(/(\d{4})[-.](\d{1,2})[-.](\d{1,2})/);
+        if (!m) return null;
+
+        const fileDate = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+        if (isNaN(fileDate.getTime())) return null;
+
+        // 해당 날짜가 속한 주의 수요일 계산
+        const d = new Date(fileDate);
+        d.setHours(0, 0, 0, 0);
+        const diffToWed = (d.getDay() + 7 - 3) % 7; // 0=일, 3=수
+        d.setDate(d.getDate() - diffToWed);
+
+        const tue = new Date(d);
+        tue.setDate(tue.getDate() + 6);
+
+        const fmt = dt => `${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`;
+        return `${fmt(d)}(수) ~ ${fmt(tue)}(화) 정산`;
     }
 };

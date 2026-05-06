@@ -649,7 +649,10 @@ const app = {
                         </div>
                         <h3 class="text-lg font-bold text-gray-800">배민 엑셀 업로드</h3>
                     </div>
-                    <input type="file" id="file-baemin" multiple accept=".xlsx, .xls" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 mb-4 cursor-pointer">
+                    <input type="file" id="file-baemin" multiple accept=".xlsx, .xls"
+                        class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 mb-2 cursor-pointer"
+                        onchange="app._detectAndApplyWeek(this)">
+                    <p id="week-hint-baemin" class="text-xs text-teal-600 font-bold mb-3 hidden"></p>
                     <button onclick="app.processUpload('baemin')" class="w-full py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-all flex items-center justify-center">
                         <i data-lucide="zap" class="w-4 h-4 mr-2"></i> 파일 일괄 파싱 및 누적
                     </button>
@@ -664,7 +667,10 @@ const app = {
                         </div>
                         <h3 class="text-lg font-bold text-gray-800">쿠팡 엑셀 업로드</h3>
                     </div>
-                    <input type="file" id="file-coupang" multiple accept=".xlsx, .xls" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 mb-4 cursor-pointer">
+                    <input type="file" id="file-coupang" multiple accept=".xlsx, .xls"
+                        class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-700 hover:file:bg-red-100 mb-2 cursor-pointer"
+                        onchange="app._detectAndApplyWeek(this)">
+                    <p id="week-hint-coupang" class="text-xs text-red-600 font-bold mb-3 hidden"></p>
                     <button onclick="app.processUpload('coupang')" class="w-full py-2.5 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-all flex items-center justify-center">
                         <i data-lucide="zap" class="w-4 h-4 mr-2"></i> 파일 일괄 파싱 및 누적
                     </button>
@@ -1370,6 +1376,59 @@ const app = {
             app.renderMembers(document.getElementById('app-content'));
         } catch(e) {
             console.error('삭제 중 오류 발생: ', e);
+        }
+    },
+
+    /**
+     * 파일 선택 시 파일명에서 주차를 자동 감지하여 라디오/드롭다운 자동 선택
+     */
+    _detectAndApplyWeek(fileInput) {
+        if (!fileInput.files || fileInput.files.length === 0) return;
+
+        const platform = fileInput.id.replace('file-', '');
+        const hintEl = document.getElementById(`week-hint-${platform}`);
+
+        // 첫 번째 파일명으로 주차 감지
+        const detectedWeek = ExcelParser.detectWeekFromFilename(fileInput.files[0].name);
+        if (!detectedWeek) {
+            if (hintEl) hintEl.classList.add('hidden');
+            return;
+        }
+
+        const currentWeek = db.getCurrentWeekName();
+        const allSettlements = db.getAllSettlements();
+        const pastWeeks = [...new Set(allSettlements.map(s => s.weekName))];
+
+        if (detectedWeek === currentWeek) {
+            // 현재 주차 라디오 선택
+            const currentRadio = document.querySelector('input[name="target-period"][value="current"]');
+            if (currentRadio) {
+                currentRadio.checked = true;
+                document.getElementById('past-settlement-select').disabled = true;
+            }
+            if (hintEl) {
+                hintEl.textContent = `✅ 자동 감지: 현재 진행 주차 (${detectedWeek})`;
+                hintEl.classList.remove('hidden');
+            }
+        } else if (pastWeeks.includes(detectedWeek)) {
+            // 과거 정산 주차 소급 선택
+            const pastRadio = document.querySelector('input[name="target-period"][value="past"]');
+            if (pastRadio) {
+                pastRadio.checked = true;
+                const select = document.getElementById('past-settlement-select');
+                select.disabled = false;
+                select.value = detectedWeek;
+            }
+            if (hintEl) {
+                hintEl.textContent = `📅 자동 감지: 과거 주차 소급 적용 (${detectedWeek})`;
+                hintEl.classList.remove('hidden');
+            }
+        } else {
+            // 감지는 됐으나 DB에 없는 주차 (현재 주차와도 다름)
+            if (hintEl) {
+                hintEl.textContent = `⚠️ 감지된 주차: ${detectedWeek} (현재 주차와 다름 — 수동 선택 필요)`;
+                hintEl.classList.remove('hidden');
+            }
         }
     },
 
