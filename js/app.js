@@ -6,8 +6,11 @@ const app = {
     },
 
     async init() {
-        // 서버에서 데이터 불러오기 대기
-        await db.loadFromServer();
+        // 서버에서 데이터 불러오기 대기 (길드 + 소득신고 동시 로드)
+        await Promise.all([
+            db.loadFromServer(),
+            incomeDb.loadFromServer()
+        ]);
 
         // Run auto-finalize check every time the app loads
         const finalizedOldWeek = db.checkAndAutoFinalize(SettlementEngine);
@@ -170,7 +173,12 @@ const app = {
                 break;
             case 'income-manager':
                 titleArea.innerText = '라이더 소득신고 정산 관리';
-                incomeApp.render(contentArea);
+                // 탭 진입 시마다 최신 데이터를 클라우드에서 로드 후 렌더링
+                contentArea.innerHTML = '<div class="p-10 text-center text-gray-400"><div class="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-3"></div>클라우드에서 데이터 불러오는 중...</div>';
+                incomeDb.loadFromServer().then(() => {
+                    incomeDb._loadingPromise = null; // 다음 진입을 위해 리셋
+                    incomeApp.render(contentArea);
+                });
                 break;
         }
     },
