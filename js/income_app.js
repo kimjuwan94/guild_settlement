@@ -223,7 +223,13 @@ const incomeApp = {
             </div>
 
             <div class="glass-panel rounded-xl border border-gray-100 p-6">
-                <h3 class="font-bold text-gray-800 mb-4">등록 라이더 목록 (${riders.length}명)</h3>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-gray-800">등록 라이더 목록 (${riders.length}명)</h3>
+                    <button onclick="incomeApp._downloadRiderList()"
+                        class="flex items-center text-sm text-green-700 border border-green-300 px-3 py-1.5 rounded-lg hover:bg-green-50 transition-all font-bold">
+                        <i data-lucide="download" class="w-4 h-4 mr-1"></i> 라이더 목록 엑셀 다운로드
+                    </button>
+                </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-gray-50 text-xs uppercase text-gray-500">
@@ -719,6 +725,33 @@ const incomeApp = {
     },
 
     // ── 이벤트 핸들러 ─────────────────────────────────────
+
+    _downloadRiderList() {
+        const riders = incomeDb.getRiders();
+        if (riders.length === 0) {
+            alert('다운로드할 라이더가 없습니다.');
+            return;
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(riders.map((r, idx) => ({
+            '번호': idx + 1,
+            '이름': r.name || '',
+            '전화번호': r.phone || '',
+            '주민번호': r.residentNo || '',
+            '배민ID': r.baeminId || '',
+            '쿠팡뒷번호': r.coupangLast4 || ''
+        })));
+        ws['!cols'] = [
+            { wch: 6 }, { wch: 12 }, { wch: 18 },
+            { wch: 20 }, { wch: 20 }, { wch: 14 }
+        ];
+        XLSX.utils.book_append_sheet(wb, ws, '라이더목록');
+
+        const today = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `라이더목록_${today}.xlsx`);
+    },
+
     _addRider(e) {
         e.preventDefault();
         try {
