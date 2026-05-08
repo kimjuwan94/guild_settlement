@@ -559,7 +559,10 @@ const eventApp = {
                     const countIdx = headers.findIndex(c => c.includes('배달건수') || c.includes('수행건수') || c.includes('완료건수'));
                     const acceptIdx = headers.findIndex(c => c.includes('수락률'));
                     const statusIdx = headers.findIndex(c => c.includes('상태'));
-                    const idIdx = headers.findIndex(c => c.includes('라이더id') || c.includes('userid') || c.includes('아이디') || c.includes('이메일') || c.includes('로그인id'));
+                    const idIdx = headers.findIndex(c => {
+                        if (c.includes('지점') || c.includes('권역') || c.includes('협력사') || c.includes('대행사')) return false;
+                        return c.includes('라이더id') || c.includes('userid') || c === '아이디' || c.includes('이메일') || c.includes('로그인id') || c.includes('라이더계정') || c.includes('배민아이디');
+                    });
 
                     const isDaily = countIdx === -1; 
                     const tempMap = {};
