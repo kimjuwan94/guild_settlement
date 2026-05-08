@@ -113,6 +113,10 @@ const app = {
         document.getElementById('nav-admin-history-log').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
         document.getElementById('nav-admin-approvals').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
 
+        // 소득신고 관리 - Admin 전용
+        document.getElementById('nav-income-manager').style.display = isAdmin ? 'flex' : 'none';
+        document.getElementById('nav-income-section').style.display = isAdmin ? 'block' : 'none';
+
         // Switch Account Buttons
         document.getElementById('btn-switch-account').style.display = isAdmin ? 'flex' : 'none';
         document.getElementById('btn-return-admin').style.display = isImpersonating ? 'flex' : 'none';
