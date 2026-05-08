@@ -683,8 +683,8 @@ const eventApp = {
                 try {
                     const records = await this._parseEventExcel(item.file, platform);
                     if (records && records.length > 0) {
-                        const batch = eventDb.addEventSettlementBatch(platform, item.date, item.region, records);
-                        eventDb.updateBatchDate(batch.batchId, item.date);
+                        const batch = eventDb.addEventSettlementBatch(platform, item.date, item.region, records, true);
+                        eventDb.updateBatchDate(batch.batchId, item.date, true);
                         added += records.length;
                         uploadedInfo.push(`${item.date} [${item.region}] ${records.length}명 (${records.reduce((a,b)=>a+b.amount,0)}콜)`);
                     } else {
@@ -697,6 +697,7 @@ const eventApp = {
         }
 
         if (added > 0) {
+            eventDb.pushEventSettlements(); // 한 번에 DB 전송
             alert(`✅ 업로드 완료!\n총 ${added}명 데이터 저장\n\n${uploadedInfo.join('\\n')}${errors.length ? '\\n\\n⚠️ 오류:\\n' + errors.join('\\n') : ''}`);
             this._staged = { baemin: [], coupang: [] };
             this.render(document.getElementById('app-content'));
@@ -735,7 +736,7 @@ const eventApp = {
                     records = await IncomeExcelParser.parseCoupang(file, [], weekLabel);
                 }
                 if (records && records.length > 0) {
-                    eventDb.addEventSettlementBatch(platform, weekLabel, region, records);
+                    eventDb.addEventSettlementBatch(platform, weekLabel, region, records, true);
                     totalAdded += records.length;
                 }
             } catch (err) {
@@ -745,6 +746,7 @@ const eventApp = {
         }
 
         if (totalAdded > 0) {
+            eventDb.pushEventSettlements(); // 한 번에 DB 전송
             alert(`✅ 업로드 완료!\n${files.length}개 파일 → ${totalAdded}명 데이터 이벤트 DB에 저장`);
             this.render(document.getElementById('app-content'));
         } else {
