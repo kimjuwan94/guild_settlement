@@ -528,6 +528,97 @@ const eventApp = {
         }
     },
 
+    // 이벤트 전용 파서 (주정산/일정산 통합 수행 건수 추출)
+    async _parseEventExcel(file, platform) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const wb = XLSX.read(e.target.result, { type: 'array' });
+                    let sheetName = wb.SheetNames[0];
+                    if (platform === 'coupang') {
+                        const coupangSheet = wb.SheetNames.find(n => n.includes('오더별') || n.includes('상세내역') || n.includes('Order'));
+                        if (coupangSheet) sheetName = coupangSheet;
+                    } else if (platform === 'baemin') {
+                        const baeminSheet = wb.SheetNames.find(n => n.includes('라이더정산') || n.includes('상세'));
+                        if (baeminSheet) sheetName = baeminSheet;
+                    }
+
+                    const ws = wb.Sheets[sheetName];
+                    const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+                    let headerRowIdx = -1;
+                    const _norm = (s) => (s||'').toString().replace(/\s/g,'').toLowerCase();
+                    for(let i=0; i<Math.min(50, rawRows.length); i++) {
+                        const row = rawRows[i].map(_norm);
+                        if(row.some(c => c.includes('라이더명') || c.includes('이름') || c.includes('파트너명') || c.includes('성함'))) {
+                            headerRowIdx = i;
+                            break;
+                        }
+                    }
+
+                    if(headerRowIdx === -1) return reject(new Error('라이더명/이름 컬럼을 찾을 수 없습니다.'));
+
+                    const headers = rawRows[headerRowIdx].map(_norm);
+                    const nameIdx = headers.findIndex(c => c.includes('라이더명') || c.includes('이름') || c.includes('파트너명') || c.includes('성함'));
+                    const countIdx = headers.findIndex(c => c.includes('배달건수') || c.includes('수행건수') || c.includes('완료건수'));
+                    const acceptIdx = headers.findIndex(c => c.includes('수락률'));
+                    const statusIdx = headers.findIndex(c => c.includes('상태'));
+
+                    const isDaily = countIdx === -1; 
+                    const tempMap = {};
+
+                    const dataRows = rawRows.slice(headerRowIdx + 1);
+                    dataRows.forEach(row => {
+                        let name = (row[nameIdx] || '').toString().trim();
+                        if (!name) return;
+
+                        const m = name.match(/^(.*?)([0-9]{4})$/);
+                        if(m) name = m[1].trim();
+
+                        if (isDaily) {
+                            if (statusIdx !== -1) {
+                                const status = (row[statusIdx] || '').toString();
+                                if (['취소', '반려', 'cancel', 'rejected'].some(s => status.includes(s))) return;
+                            }
+                            if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0 };
+                            tempMap[name].count += 1;
+                        } else {
+                            const count = parseFloat((row[countIdx] || 0).toString().replace(/,/g,''));
+                            const accept = parseFloat((row[acceptIdx] || '0').toString().replace(/%/g,''));
+                            if (count > 0) {
+                                if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0 };
+                                tempMap[name].count += count;
+                                tempMap[name].acceptRate = accept || 0;
+                            }
+                        }
+                    });
+
+                    const activeMembers = (typeof db !== 'undefined' ? db.getGuildMembers() : []) || [];
+                    const records = [];
+                    for (const [name, data] of Object.entries(tempMap)) {
+                        const member = activeMembers.find(m => {
+                            if (m.status !== 'approved') return false;
+                            const dbNames = (m.name||'').split(',').map(n=>n.trim());
+                            return dbNames.includes(name);
+                        });
+                        records.push({
+                            riderId: member ? member.id : `UNKNOWN_${Date.now()}_${Math.random().toString(36).substr(2,5)}`,
+                            name: name,
+                            amount: data.count, // eventDb는 콜 수를 amount 필드에 저장
+                            acceptRate: data.acceptRate || 0
+                        });
+                    }
+                    resolve(records);
+                } catch(e) {
+                    reject(e);
+                }
+            };
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+        });
+    },
+
     async _parseAndUploadAll() {
         const total = (this._staged.baemin||[]).length + (this._staged.coupang||[]).length;
         if (total === 0) { alert('업로드할 파일이 없습니다.'); return; }
@@ -543,17 +634,14 @@ const eventApp = {
                     continue;
                 }
                 try {
-                    let records;
-                    if (platform === 'baemin') {
-                        records = await IncomeExcelParser.parseBaemin(item.file, [], item.date);
-                    } else {
-                        records = await IncomeExcelParser.parseCoupang(item.file, [], item.date);
-                    }
+                    const records = await this._parseEventExcel(item.file, platform);
                     if (records && records.length > 0) {
                         const batch = eventDb.addEventSettlementBatch(platform, item.date, item.region, records);
                         eventDb.updateBatchDate(batch.batchId, item.date);
                         added += records.length;
-                        uploadedInfo.push(`${item.date} [${item.region}] ${records.length}명`);
+                        uploadedInfo.push(`${item.date} [${item.region}] ${records.length}명 (${records.reduce((a,b)=>a+b.amount,0)}콜)`);
+                    } else {
+                        errors.push(`${item.name}: 파싱된 유효한 데이터(콜 수행기록)가 없습니다.`);
                     }
                 } catch (err) {
                     errors.push(`${item.name}: ${err.message}`);
