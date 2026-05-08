@@ -270,12 +270,6 @@ const eventApp = {
                                 </select>
                             </div>
                             <div>
-                                <label class="text-xs font-bold text-gray-500 mb-1 block">수락률 하한 (%)</label>
-                                <input type="number" id="ev-accept" value="0" min="0" max="100"
-                                    class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none"
-                                    placeholder="0 = 전체 포함">
-                            </div>
-                            <div>
                                 <label class="text-xs font-bold text-gray-500 mb-1 block">보상금액 (원)</label>
                                 <input type="number" id="ev-amount" value="100000" min="0"
                                     class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
@@ -351,8 +345,6 @@ const eventApp = {
                     <select id="rank-region" class="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
                         ${regions.map(r => `<option value="${r}">${r}</option>`).join('')}
                     </select>
-                    <input type="number" id="rank-accept" value="0" min="0" max="100" placeholder="수락률 하한(%)"
-                        class="w-32 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
                     <button onclick="eventApp._loadRanking()"
                         class="bg-yellow-500 text-white px-5 py-2 rounded-lg font-bold text-sm hover:bg-yellow-600 transition-all">
                         랭킹 조회
@@ -418,13 +410,12 @@ const eventApp = {
         const start  = document.getElementById('ev-start')?.value || '';
         const end    = document.getElementById('ev-end')?.value || '';
         const region = document.getElementById('ev-region')?.value || '전체';
-        const accept = parseFloat(document.getElementById('ev-accept')?.value || '0');
-
+        
         if (!start || !end) { alert('대상 기간을 선택하세요.'); return; }
 
         this._winners = [];
         this._spinAngle = 0;
-        this._pool = eventDb.getRouletteCandidates(start, end, region, accept, []);
+        this._pool = eventDb.getRouletteCandidates(start, end, region, 0, []);
 
         if (this._pool.length === 0) {
             alert('해당 조건의 후보가 없습니다.\n정산서가 업로드되어 있는지 확인하세요.');
@@ -438,11 +429,10 @@ const eventApp = {
         const start  = document.getElementById('rank-start')?.value || '';
         const end    = document.getElementById('rank-end')?.value || '';
         const region = document.getElementById('rank-region')?.value || '전체';
-        const accept = parseFloat(document.getElementById('rank-accept')?.value || '0');
 
         if (!start || !end) { alert('기간을 선택하세요.'); return; }
 
-        const ranking = eventDb.getRanking(start, end, region, accept, []);
+        const ranking = eventDb.getRanking(start, end, region, 0, []);
         const resultDiv = document.getElementById('ranking-result');
         if (!resultDiv) return;
 
@@ -457,7 +447,6 @@ const eventApp = {
                 <td class="py-3 px-4 text-lg">${medals[i] || `${i+1}위`}</td>
                 <td class="py-3 px-4 font-bold text-gray-800">${r.name}</td>
                 <td class="py-3 px-4 text-blue-700 font-bold text-center">${r.deliveries}콜</td>
-                <td class="py-3 px-4 text-xs text-gray-400">${r.acceptRate !== null ? r.acceptRate + '%' : '-'}</td>
             </tr>`).join('');
 
         resultDiv.innerHTML = `
@@ -467,7 +456,6 @@ const eventApp = {
                         <th class="py-3 px-4">순위</th>
                         <th class="py-3 px-4">라이더</th>
                         <th class="py-3 px-4 text-center">수행 콜 수</th>
-                        <th class="py-3 px-4">수락률</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -571,6 +559,7 @@ const eventApp = {
                     const countIdx = headers.findIndex(c => c.includes('배달건수') || c.includes('수행건수') || c.includes('완료건수'));
                     const acceptIdx = headers.findIndex(c => c.includes('수락률'));
                     const statusIdx = headers.findIndex(c => c.includes('상태'));
+                    const idIdx = headers.findIndex(c => c.includes('라이더id') || c.includes('userid') || c.includes('아이디') || c.includes('이메일') || c.includes('로그인id'));
 
                     const isDaily = countIdx === -1; 
                     const tempMap = {};
@@ -588,18 +577,23 @@ const eventApp = {
                             filePhone = m[2];
                         }
 
+                        let fileId = '';
+                        if (idIdx !== -1) {
+                            fileId = (row[idIdx] || '').toString().trim();
+                        }
+
                         if (isDaily) {
                             if (statusIdx !== -1) {
                                 const status = (row[statusIdx] || '').toString();
                                 if (['취소', '반려', 'cancel', 'rejected'].some(s => status.includes(s))) return;
                             }
-                            if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0, filePhone };
+                            if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0, filePhone, fileId };
                             tempMap[name].count += 1;
                         } else {
                             const count = parseFloat((row[countIdx] || 0).toString().replace(/,/g,''));
                             const accept = parseFloat((row[acceptIdx] || '0').toString().replace(/%/g,''));
                             if (count > 0) {
-                                if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0, filePhone };
+                                if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0, filePhone, fileId };
                                 tempMap[name].count += count;
                                 tempMap[name].acceptRate = accept || 0;
                             }
@@ -618,7 +612,8 @@ const eventApp = {
                         // ── Display Name 포맷 결정 ──
                         let displayName = name;
                         if (platform === 'baemin') {
-                            displayName = (member && member.baeminId) ? member.baeminId.split(',')[0].trim() : name;
+                            // 배민: 파일에서 뽑은 ID 우선. 정 없다면 DB의 ID, 그것도 없으면 이름.
+                            displayName = data.fileId || ((member && member.baeminId) ? member.baeminId.split(',')[0].trim() : name);
                         } else if (platform === 'coupang') {
                             let masked = name;
                             if (masked.length >= 3) {
@@ -630,8 +625,16 @@ const eventApp = {
                             displayName = `${masked}${phone}`;
                         }
 
+                        // DB에 없는 라이더라면 랜덤 ID가 아니라 고유 식별자(배민ID 또는 이름)를 사용해 여러 파일의 동일인을 묶음
+                        let resolvedRiderId = null;
+                        if (member) {
+                            resolvedRiderId = member.id;
+                        } else if (platform === 'baemin' && data.fileId) {
+                            resolvedRiderId = data.fileId;
+                        }
+
                         records.push({
-                            riderId: member ? member.id : `UNKNOWN_${Date.now()}_${Math.random().toString(36).substr(2,5)}`,
+                            riderId: resolvedRiderId, // null이면 event_db.js에서 name으로 묶음
                             name: name,
                             displayName: displayName,
                             amount: data.count, // eventDb는 콜 수를 amount 필드에 저장
