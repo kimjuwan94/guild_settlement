@@ -413,9 +413,18 @@ const eventApp = {
         
         if (!start || !end) { alert('대상 기간을 선택하세요.'); return; }
 
+        // 이벤트 내역(히스토리)에 남은 당첨자 추출 (룰렛 배제용)
+        const pastEvents = eventDb.getEvents();
+        const prevWinnerIds = [];
+        pastEvents.forEach(ev => {
+            if (ev.winners) {
+                ev.winners.forEach(w => prevWinnerIds.push(w.riderId || w.name));
+            }
+        });
+
         this._winners = [];
         this._spinAngle = 0;
-        this._pool = eventDb.getRouletteCandidates(start, end, region, 0, []);
+        this._pool = eventDb.getRouletteCandidates(start, end, region, 0, prevWinnerIds);
 
         if (this._pool.length === 0) {
             alert('해당 조건의 후보가 없습니다.\n정산서가 업로드되어 있는지 확인하세요.');
@@ -922,14 +931,15 @@ const eventApp = {
     _confirmRewards() {
         if (this._winners.length === 0) return;
 
-        const week   = document.getElementById('ev-week')?.value || '';
+        const start  = document.getElementById('ev-start')?.value || '';
+        const end    = document.getElementById('ev-end')?.value || '';
         const region = document.getElementById('ev-region')?.value || '전체';
         const amount = parseInt(document.getElementById('ev-amount')?.value || '0');
         const label  = document.getElementById('ev-label')?.value || '이벤트 당첨금';
 
         const event = eventDb.createEvent({
-            weekLabel: week, region, rewardAmount: amount, rewardLabel: label,
-            title: `${week} ${region} 룰렛 추첨`
+            weekLabel: `${start} ~ ${end}`, region, rewardAmount: amount, rewardLabel: label,
+            title: `${start} ~ ${end} ${region} 룰렛 추첨`
         });
 
         this._winners.forEach((w, i) => {
