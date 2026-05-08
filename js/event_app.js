@@ -496,8 +496,8 @@ const eventApp = {
         // 중복 파일명 제외
         const existing = new Set(this._staged[platform].map(f => f.name));
         files.filter(f => !existing.has(f.name)).forEach(file => {
-            const date = IncomeExcelParser.detectDateFromFilename(file.name) || defaultDate;
-            const region = IncomeExcelParser.detectRegionFromFilename(file.name) || defaultRegion;
+            const date = ExcelParser.detectDateFromFilename(file.name) || defaultDate;
+            const region = ExcelParser.detectRegionFromFilename(file.name) || defaultRegion;
             
             this._staged[platform].push({
                 file,
