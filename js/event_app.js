@@ -95,13 +95,19 @@ const eventApp = {
                         </div>`).join('')}
                 </div>`).join('');
 
-        // 스테이징 파일 목록
+        // 스테이징 파일 목록 (개별 날짜/권역 표시)
         const mkStagedList = (platform) =>
             (this._staged[platform] || []).map((f, i) => `
-                <div class="flex items-center justify-between py-1.5 px-3 bg-white rounded-lg border border-gray-200 text-xs">
-                    <span class="truncate text-gray-700 max-w-[180px]" title="${f.name}">📄 ${f.name}</span>
+                <div class="flex items-center justify-between py-1.5 px-3 bg-white rounded-lg border border-gray-200 text-xs mb-1">
+                    <div class="flex-1 min-w-0">
+                        <div class="truncate text-gray-700 font-bold" title="${f.name}">📄 ${f.name}</div>
+                        <div class="text-gray-400 mt-0.5 flex gap-2">
+                            <span class="bg-gray-100 px-1 rounded">${f.date}</span>
+                            <span class="bg-purple-50 text-purple-600 px-1 rounded">${f.region || '권역 미지정'}</span>
+                        </div>
+                    </div>
                     <button onclick="eventApp._removeStaged('${platform}',${i})"
-                        class="ml-2 text-gray-400 hover:text-red-500 font-bold flex-shrink-0">✕</button>
+                        class="ml-2 text-gray-400 hover:text-red-500 font-bold flex-shrink-0 p-1">✕</button>
                 </div>`).join('') || '<p class="text-xs text-gray-400 text-center py-3">파일을 여기에 끌어다 놓거나 클릭하여 선택</p>';
 
         const totalStaged = (this._staged.baemin||[]).length + (this._staged.coupang||[]).length;
@@ -483,9 +489,23 @@ const eventApp = {
     _stageFiles(platform, fileList) {
         const files = Array.from(fileList);
         if (!this._staged[platform]) this._staged[platform] = [];
+        
+        const defaultDate = document.getElementById('ev-up-date')?.value || new Date().toISOString().slice(0,10);
+        const defaultRegion = document.getElementById('ev-up-region')?.value || '';
+
         // 중복 파일명 제외
         const existing = new Set(this._staged[platform].map(f => f.name));
-        files.filter(f => !existing.has(f.name)).forEach(f => this._staged[platform].push(f));
+        files.filter(f => !existing.has(f.name)).forEach(file => {
+            const date = IncomeExcelParser.detectDateFromFilename(file.name) || defaultDate;
+            const region = IncomeExcelParser.detectRegionFromFilename(file.name) || defaultRegion;
+            
+            this._staged[platform].push({
+                file,
+                name: file.name,
+                date,
+                region
+            });
+        });
         this._refreshUploadUI();
     },
 
@@ -509,44 +529,44 @@ const eventApp = {
     },
 
     async _parseAndUploadAll() {
-        const date   = document.getElementById('ev-up-date')?.value || new Date().toISOString().slice(0,10);
-        const region = (document.getElementById('ev-up-region')?.value || '').trim();
-        if (!region) { alert('권역을 입력하세요. (예: 김해북부)'); return; }
-
         const total = (this._staged.baemin||[]).length + (this._staged.coupang||[]).length;
         if (total === 0) { alert('업로드할 파일이 없습니다.'); return; }
 
         let added = 0;
         const errors = [];
+        const uploadedInfo = [];
 
         for (const platform of ['baemin', 'coupang']) {
-            for (const file of (this._staged[platform] || [])) {
+            for (const item of (this._staged[platform] || [])) {
+                if (!item.region) {
+                    errors.push(`${item.name}: 권역을 알 수 없습니다. (공통 설정에 권역을 입력하거나 파일명에 포함시키세요)`);
+                    continue;
+                }
                 try {
                     let records;
                     if (platform === 'baemin') {
-                        records = await IncomeExcelParser.parseBaemin(file, [], date);
+                        records = await IncomeExcelParser.parseBaemin(item.file, [], item.date);
                     } else {
-                        records = await IncomeExcelParser.parseCoupang(file, [], date);
+                        records = await IncomeExcelParser.parseCoupang(item.file, [], item.date);
                     }
                     if (records && records.length > 0) {
-                        // date + weekLabel 모두 저장 (룰렛/랭킹 필터 용도)
-                        const batch = eventDb.addEventSettlementBatch(platform, date, region, records);
-                        // date 필드 별도 저장
-                        eventDb.updateBatchDate(batch.batchId, date);
+                        const batch = eventDb.addEventSettlementBatch(platform, item.date, item.region, records);
+                        eventDb.updateBatchDate(batch.batchId, item.date);
                         added += records.length;
+                        uploadedInfo.push(`${item.date} [${item.region}] ${records.length}명`);
                     }
                 } catch (err) {
-                    errors.push(`${file.name}: ${err.message}`);
+                    errors.push(`${item.name}: ${err.message}`);
                 }
             }
         }
 
         if (added > 0) {
-            alert(`✅ 업로드 완료!\n${total}개 파일 → ${added}명 데이터 저장\n날짜: ${date} / 권역: ${region}${errors.length ? '\n\n⚠️ 오류:\n' + errors.join('\n') : ''}`);
+            alert(`✅ 업로드 완료!\n총 ${added}명 데이터 저장\n\n${uploadedInfo.join('\\n')}${errors.length ? '\\n\\n⚠️ 오류:\\n' + errors.join('\\n') : ''}`);
             this._staged = { baemin: [], coupang: [] };
             this.render(document.getElementById('app-content'));
         } else {
-            alert('유효한 데이터가 없습니다.\n' + errors.join('\n'));
+            alert('유효한 데이터가 저장되지 않았습니다.\\n' + errors.join('\\n'));
         }
     },
 

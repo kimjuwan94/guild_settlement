@@ -245,5 +245,37 @@ const ExcelParser = {
 
         const fmt = dt => `${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`;
         return `${fmt(d)}(수) ~ ${fmt(tue)}(화) 정산`;
+    },
+
+    /**
+     * 파일명에서 YYYY-MM-DD 형식의 날짜 추출 (일정산용)
+     */
+    detectDateFromFilename(filename) {
+        const m = filename.match(/(\d{4})[-.](\d{1,2})[-.](\d{1,2})/);
+        if (m) {
+            return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+        }
+        // YY.MM.DD 또는 YYMMDD 형태 등은 필요시 추가
+        return null;
+    },
+
+    /**
+     * 파일명에서 권역 이름 추출 (불필요한 단어 제거 후 남은 텍스트)
+     */
+    detectRegionFromFilename(filename) {
+        let name = filename.replace(/\.[^/.]+$/, ""); // 확장자 제거
+        // 날짜 패턴 제거
+        name = name.replace(/\d{4}[-.]\d{1,2}[-.]\d{1,2}/g, '');
+        // 공통 단어 제거
+        name = name.replace(/배달의민족|배민|쿠팡이츠|쿠팡|정산서|일정산|주정산|업로드/g, '');
+        // 특수기호 제거
+        name = name.replace(/[()\[\]{}_-]/g, ' ');
+        
+        // 남은 단어들을 조합하여 권역으로 사용
+        const parts = name.split(/\s+/).filter(p => p.trim().length > 0);
+        if (parts.length > 0) {
+            return parts.join(' ');
+        }
+        return null;
     }
 };
