@@ -117,6 +117,9 @@ const app = {
         document.getElementById('nav-income-manager').style.display = isAdmin ? 'flex' : 'none';
         document.getElementById('nav-income-section').style.display = isAdmin ? 'block' : 'none';
 
+        // 이벤트/추첨 관리 - Admin 전용
+        document.getElementById('nav-admin-events').style.display = isAdmin ? 'flex' : 'none';
+
         // Switch Account Buttons
         document.getElementById('btn-switch-account').style.display = isAdmin ? 'flex' : 'none';
         document.getElementById('btn-return-admin').style.display = isImpersonating ? 'flex' : 'none';
@@ -174,6 +177,10 @@ const app = {
             case 'admin-history-log':
                 titleArea.innerText = '전체 시스템 등록 현황 및 이력 (Admin)';
                 this.renderRegistrationHistory(contentArea);
+                break;
+            case 'admin-events':
+                titleArea.innerText = '이벤트 / 추첨 관리 (Admin)';
+                eventDb.load().then(() => eventApp.render(contentArea));
                 break;
             case 'income-manager':
                 titleArea.innerText = '라이더 소득신고 정산 관리';
