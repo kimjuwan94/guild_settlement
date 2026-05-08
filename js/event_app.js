@@ -5,12 +5,13 @@
  * - 보상 주정산 연동
  */
 const eventApp = {
-    _tab: 'upload',         // 'upload' | 'roulette' | 'ranking' | 'history'
-    _pool: [],               // 현재 룰렛 후보 목록
-    _winners: [],            // 이번 세션 당첨자
+    _tab: 'upload',
+    _pool: [],
+    _winners: [],
     _spinAngle: 0,
     _isSpinning: false,
     _pendingEventId: null,
+    _staged: { baemin: [], coupang: [] }, // 드래그&드롭 스테이징 파일
 
     render(container) {
         const tabs = [
@@ -48,94 +49,173 @@ const eventApp = {
         if (this._tab === 'roulette' && this._pool.length > 0) this._redraw();
     },
 
-    // ── 정산서 업로드 탭 ───────────────────────────────────
+    // ── 정산서 업로드 탭 (날짜·권역별 + 드래그&드롭) ────────
     _renderUpload() {
-        const batches  = eventDb.getEventSettlements();
-        const batchRows = batches.slice().reverse().map(b => {
-            const platBadge = b.platform === 'baemin'
-                ? '<span class="px-2 py-0.5 bg-teal-100 text-teal-700 text-xs font-bold rounded">배민</span>'
-                : '<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded">쿠팡</span>';
-            return `
-                <tr class="border-b border-gray-100 hover:bg-gray-50 text-sm">
-                    <td class="py-2 px-4">${platBadge}</td>
-                    <td class="py-2 px-4 font-medium">${b.weekLabel}</td>
-                    <td class="py-2 px-4">${b.region || '-'}</td>
-                    <td class="py-2 px-4 text-center">${(b.records||[]).length}명</td>
-                    <td class="py-2 px-4 text-xs text-gray-400">${new Date(b.uploadedAt).toLocaleString()}</td>
-                    <td class="py-2 px-4 text-right">
-                        <button onclick="eventApp._deleteBatch('${b.batchId}')"
-                            class="text-red-400 hover:text-red-600 text-xs border border-red-200 px-2 py-1 rounded hover:bg-red-50">삭제</button>
-                    </td>
-                </tr>`;
-        }).join('');
+        const batches = eventDb.getEventSettlements();
+
+        // 업로드 내역: 날짜 → 권역 → 플랫폼 그룹핑
+        const grouped = {};
+        batches.slice().reverse().forEach(b => {
+            const dateKey = b.date || b.weekLabel || '-';
+            const regKey  = b.region || '-';
+            if (!grouped[dateKey]) grouped[dateKey] = {};
+            if (!grouped[dateKey][regKey]) grouped[dateKey][regKey] = [];
+            grouped[dateKey][regKey].push(b);
+        });
+
+        const historyHtml = Object.keys(grouped).length === 0
+            ? '<p class="text-center text-gray-400 text-sm py-6">업로드된 이벤트 정산서가 없습니다.</p>'
+            : Object.entries(grouped).map(([date, regions]) => `
+                <div class="mb-4">
+                    <div class="flex items-center mb-2">
+                        <i data-lucide="calendar" class="w-4 h-4 mr-2 text-purple-500"></i>
+                        <span class="font-bold text-gray-800">${date}</span>
+                    </div>
+                    ${Object.entries(regions).map(([reg, bs]) => `
+                        <div class="ml-6 mb-2">
+                            <div class="flex items-center mb-1">
+                                <i data-lucide="map-pin" class="w-3 h-3 mr-1 text-gray-400"></i>
+                                <span class="text-sm font-bold text-gray-600">${reg}</span>
+                            </div>
+                            <div class="ml-4 space-y-1">
+                                ${bs.map(b => {
+                                    const badge = b.platform === 'baemin'
+                                        ? '<span class="px-2 py-0.5 bg-teal-100 text-teal-700 text-xs font-bold rounded">배민</span>'
+                                        : '<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded">쿠팡</span>';
+                                    return `<div class="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg border border-gray-100 text-sm">
+                                        <div class="flex items-center gap-2">${badge}
+                                            <span class="text-gray-600">${(b.records||[]).length}명</span>
+                                            <span class="text-xs text-gray-400">${new Date(b.uploadedAt).toLocaleString()}</span>
+                                        </div>
+                                        <button onclick="eventApp._deleteBatch('${b.batchId}')"
+                                            class="text-red-400 hover:text-red-600 text-xs border border-red-200 px-2 py-0.5 rounded hover:bg-red-50">삭제</button>
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                        </div>`).join('')}
+                </div>`).join('');
+
+        // 스테이징 파일 목록
+        const mkStagedList = (platform) =>
+            (this._staged[platform] || []).map((f, i) => `
+                <div class="flex items-center justify-between py-1.5 px-3 bg-white rounded-lg border border-gray-200 text-xs">
+                    <span class="truncate text-gray-700 max-w-[180px]" title="${f.name}">📄 ${f.name}</span>
+                    <button onclick="eventApp._removeStaged('${platform}',${i})"
+                        class="ml-2 text-gray-400 hover:text-red-500 font-bold flex-shrink-0">✕</button>
+                </div>`).join('') || '<p class="text-xs text-gray-400 text-center py-3">파일을 여기에 끌어다 놓거나 클릭하여 선택</p>';
+
+        const totalStaged = (this._staged.baemin||[]).length + (this._staged.coupang||[]).length;
 
         return `
+            <!-- 날짜 + 권역 공통 설정 -->
+            <div class="glass-panel rounded-xl border border-purple-100 p-5 mb-6">
+                <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                    <i data-lucide="settings-2" class="w-4 h-4 mr-2 text-purple-600"></i> 업로드 공통 설정
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 mb-1 block">📅 날짜</label>
+                        <input type="date" id="ev-up-date" value="${new Date().toISOString().slice(0,10)}"
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 mb-1 block">📍 권역</label>
+                        <input type="text" id="ev-up-region" placeholder="예: 김해북부"
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-2">※ 날짜와 권역을 먼저 입력 후 파일을 올려주세요.</p>
+            </div>
+
+            <!-- 드롭존 -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 
-                <!-- 배민 업로드 -->
-                <div class="glass-panel rounded-xl border border-teal-200 p-6 relative overflow-hidden">
+                <!-- 배민 드롭존 -->
+                <div class="glass-panel rounded-xl border border-teal-200 p-5 relative overflow-hidden">
                     <div class="absolute top-0 left-0 w-1.5 h-full bg-teal-500"></div>
-                    <h3 class="font-bold text-gray-800 mb-1 flex items-center">
-                        <i data-lucide="bike" class="w-5 h-5 mr-2 text-teal-600"></i> 배민 정산서 업로드
+                    <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                        <i data-lucide="bike" class="w-5 h-5 mr-2 text-teal-600"></i>
+                        배민 정산서
+                        <span class="ml-auto text-xs font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
+                            ${(this._staged.baemin||[]).length}개 대기중
+                        </span>
                     </h3>
-                    <p class="text-xs text-gray-500 mb-4">이벤트 전용 — 소득신고 정산과 별도 저장됩니다.</p>
-                    <div class="space-y-2 mb-4">
-                        <input type="text" id="ev-up-week-b" placeholder="주차 (예: 2026-05-1)"
-                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-400 focus:outline-none">
-                        <input type="text" id="ev-up-region-b" placeholder="권역 (예: 김해북부)"
-                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-400 focus:outline-none">
-                        <input type="file" id="ev-file-b" accept=".xlsx,.xls" multiple
-                            class="w-full text-sm border rounded-lg px-3 py-2">
+
+                    <!-- 드롭 영역 -->
+                    <div id="drop-baemin"
+                        ondragover="eventApp._onDragOver(event,'baemin')"
+                        ondragleave="eventApp._onDragLeave(event,'baemin')"
+                        ondrop="eventApp._onDrop(event,'baemin')"
+                        onclick="document.getElementById('ev-file-b').click()"
+                        class="border-2 border-dashed border-teal-300 rounded-xl p-5 mb-3 text-center cursor-pointer hover:bg-teal-50 transition-all min-h-[80px] flex items-center justify-center">
+                        <div>
+                            <i data-lucide="upload-cloud" class="w-8 h-8 text-teal-400 mx-auto mb-1"></i>
+                            <p class="text-xs text-teal-600 font-bold">파일을 끌어다 놓거나 클릭하여 선택</p>
+                            <p class="text-xs text-gray-400">여러 파일 한번에 가능</p>
+                        </div>
                     </div>
-                    <button onclick="eventApp._parseAndUpload('baemin')"
-                        class="w-full bg-teal-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-teal-700 transition-all">
-                        파일 파싱 및 이벤트 DB 저장
-                    </button>
+                    <input type="file" id="ev-file-b" accept=".xlsx,.xls" multiple class="hidden"
+                        onchange="eventApp._stageFiles('baemin', this.files)">
+
+                    <!-- 스테이징 목록 -->
+                    <div class="space-y-1 max-h-40 overflow-y-auto mb-3">${mkStagedList('baemin')}</div>
                 </div>
 
-                <!-- 쿠팡 업로드 -->
-                <div class="glass-panel rounded-xl border border-red-200 p-6 relative overflow-hidden">
+                <!-- 쿠팡 드롭존 -->
+                <div class="glass-panel rounded-xl border border-red-200 p-5 relative overflow-hidden">
                     <div class="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
-                    <h3 class="font-bold text-gray-800 mb-1 flex items-center">
-                        <i data-lucide="truck" class="w-5 h-5 mr-2 text-red-600"></i> 쿠팡 정산서 업로드
+                    <h3 class="font-bold text-gray-800 mb-3 flex items-center">
+                        <i data-lucide="truck" class="w-5 h-5 mr-2 text-red-600"></i>
+                        쿠팡 정산서
+                        <span class="ml-auto text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                            ${(this._staged.coupang||[]).length}개 대기중
+                        </span>
                     </h3>
-                    <p class="text-xs text-gray-500 mb-4">이벤트 전용 — 소득신고 정산과 별도 저장됩니다.</p>
-                    <div class="space-y-2 mb-4">
-                        <input type="text" id="ev-up-week-c" placeholder="주차 (예: 2026-05-1)"
-                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 focus:outline-none">
-                        <input type="text" id="ev-up-region-c" placeholder="권역 (예: 김해북부)"
-                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 focus:outline-none">
-                        <input type="file" id="ev-file-c" accept=".xlsx,.xls" multiple
-                            class="w-full text-sm border rounded-lg px-3 py-2">
+
+                    <div id="drop-coupang"
+                        ondragover="eventApp._onDragOver(event,'coupang')"
+                        ondragleave="eventApp._onDragLeave(event,'coupang')"
+                        ondrop="eventApp._onDrop(event,'coupang')"
+                        onclick="document.getElementById('ev-file-c').click()"
+                        class="border-2 border-dashed border-red-300 rounded-xl p-5 mb-3 text-center cursor-pointer hover:bg-red-50 transition-all min-h-[80px] flex items-center justify-center">
+                        <div>
+                            <i data-lucide="upload-cloud" class="w-8 h-8 text-red-400 mx-auto mb-1"></i>
+                            <p class="text-xs text-red-600 font-bold">파일을 끌어다 놓거나 클릭하여 선택</p>
+                            <p class="text-xs text-gray-400">여러 파일 한번에 가능</p>
+                        </div>
                     </div>
-                    <button onclick="eventApp._parseAndUpload('coupang')"
-                        class="w-full bg-red-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-red-700 transition-all">
-                        파일 파싱 및 이벤트 DB 저장
+                    <input type="file" id="ev-file-c" accept=".xlsx,.xls" multiple class="hidden"
+                        onchange="eventApp._stageFiles('coupang', this.files)">
+
+                    <div class="space-y-1 max-h-40 overflow-y-auto mb-3">${mkStagedList('coupang')}</div>
+                </div>
+            </div>
+
+            <!-- 한번에 업로드 버튼 -->
+            <div class="glass-panel rounded-xl border border-gray-100 p-5 mb-6 flex items-center justify-between">
+                <div>
+                    <p class="font-bold text-gray-800">총 <span class="text-purple-600">${totalStaged}개</span> 파일 대기중</p>
+                    <p class="text-xs text-gray-400 mt-0.5">배민 ${(this._staged.baemin||[]).length}개 · 쿠팡 ${(this._staged.coupang||[]).length}개</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="eventApp._clearStaged()"
+                        class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 font-bold transition-all">
+                        초기화
+                    </button>
+                    <button onclick="eventApp._parseAndUploadAll()"
+                        ${totalStaged === 0 ? 'disabled' : ''}
+                        class="px-6 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all shadow disabled:opacity-40">
+                        🚀 한번에 업로드
                     </button>
                 </div>
             </div>
 
-            <!-- 업로드 내역 -->
+            <!-- 업로드 내역 (날짜·권역별 그룹) -->
             <div class="glass-panel rounded-xl border border-gray-100 p-6">
-                <h3 class="font-bold text-gray-800 mb-4">이벤트 정산서 업로드 내역 (${batches.length}건)</h3>
-                ${batches.length === 0
-                    ? '<p class="text-center text-gray-400 text-sm py-6">업로드된 이벤트 정산서가 없습니다.</p>'
-                    : `<div class="overflow-x-auto">
-                        <table class="w-full text-left">
-                            <thead class="bg-gray-50 text-xs uppercase text-gray-500">
-                                <tr>
-                                    <th class="py-2 px-4">플랫폼</th>
-                                    <th class="py-2 px-4">주차</th>
-                                    <th class="py-2 px-4">권역</th>
-                                    <th class="py-2 px-4 text-center">인원</th>
-                                    <th class="py-2 px-4">업로드 시각</th>
-                                    <th class="py-2 px-4"></th>
-                                </tr>
-                            </thead>
-                            <tbody>${batchRows}</tbody>
-                        </table>
-                    </div>`
-                }
+                <h3 class="font-bold text-gray-800 mb-4">
+                    업로드 내역 <span class="text-gray-400 font-normal text-sm">(${batches.length}건)</span>
+                </h3>
+                ${historyHtml}
             </div>`;
     },
 
@@ -379,6 +459,95 @@ const eventApp = {
                 </thead>
                 <tbody>${rows}</tbody>
             </table>`;
+    },
+
+    // ── 드래그&드롭 핸들러 ───────────────────────────────────
+    _onDragOver(e, platform) {
+        e.preventDefault();
+        const zone = document.getElementById(`drop-${platform}`);
+        if (zone) zone.classList.add(platform === 'baemin' ? 'bg-teal-50' : 'bg-red-50', 'border-opacity-100');
+    },
+    _onDragLeave(e, platform) {
+        const zone = document.getElementById(`drop-${platform}`);
+        if (zone) zone.classList.remove('bg-teal-50', 'bg-red-50');
+    },
+    _onDrop(e, platform) {
+        e.preventDefault();
+        const zone = document.getElementById(`drop-${platform}`);
+        if (zone) zone.classList.remove('bg-teal-50', 'bg-red-50');
+        const files = Array.from(e.dataTransfer.files).filter(f => f.name.match(/\.(xlsx|xls)$/i));
+        if (files.length === 0) { alert('엑셀 파일(.xlsx, .xls)만 업로드 가능합니다.'); return; }
+        this._stageFiles(platform, files);
+    },
+
+    _stageFiles(platform, fileList) {
+        const files = Array.from(fileList);
+        if (!this._staged[platform]) this._staged[platform] = [];
+        // 중복 파일명 제외
+        const existing = new Set(this._staged[platform].map(f => f.name));
+        files.filter(f => !existing.has(f.name)).forEach(f => this._staged[platform].push(f));
+        this._refreshUploadUI();
+    },
+
+    _removeStaged(platform, idx) {
+        if (this._staged[platform]) this._staged[platform].splice(idx, 1);
+        this._refreshUploadUI();
+    },
+
+    _clearStaged() {
+        this._staged = { baemin: [], coupang: [] };
+        this._refreshUploadUI();
+    },
+
+    _refreshUploadUI() {
+        // 탭 전체 재렌더 없이 업로드 탭만 갱신
+        const body = document.getElementById('event-body');
+        if (body && this._tab === 'upload') {
+            body.innerHTML = this._renderUpload();
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    },
+
+    async _parseAndUploadAll() {
+        const date   = document.getElementById('ev-up-date')?.value || new Date().toISOString().slice(0,10);
+        const region = (document.getElementById('ev-up-region')?.value || '').trim();
+        if (!region) { alert('권역을 입력하세요. (예: 김해북부)'); return; }
+
+        const total = (this._staged.baemin||[]).length + (this._staged.coupang||[]).length;
+        if (total === 0) { alert('업로드할 파일이 없습니다.'); return; }
+
+        let added = 0;
+        const errors = [];
+
+        for (const platform of ['baemin', 'coupang']) {
+            for (const file of (this._staged[platform] || [])) {
+                try {
+                    let records;
+                    if (platform === 'baemin') {
+                        records = await IncomeExcelParser.parseBaemin(file, [], date);
+                    } else {
+                        records = await IncomeExcelParser.parseCoupang(file, [], date);
+                    }
+                    if (records && records.length > 0) {
+                        // date + weekLabel 모두 저장 (룰렛/랭킹 필터 용도)
+                        const batch = eventDb.addEventSettlementBatch(platform, date, region, records);
+                        // date 필드 별도 저장
+                        eventDb.updateBatchDate(batch.batchId, date);
+                        added += records.length;
+                    }
+                } catch (err) {
+                    errors.push(`${file.name}: ${err.message}`);
+                }
+            }
+        }
+
+        if (added > 0) {
+            alert(`✅ 업로드 완료!\n${total}개 파일 → ${added}명 데이터 저장\n날짜: ${date} / 권역: ${region}${errors.length ? '\n\n⚠️ 오류:\n' + errors.join('\n') : ''}`);
+            this._staged = { baemin: [], coupang: [] };
+            this.render(document.getElementById('app-content'));
+        } else {
+            alert('유효한 데이터가 없습니다.\n' + errors.join('\n'));
+        }
     },
 
     _deleteBatch(batchId) {

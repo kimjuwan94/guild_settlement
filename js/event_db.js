@@ -103,12 +103,13 @@ const eventDb = {
      * @param {string} region    - '김해북부'
      * @param {Array}  records   - [{ riderId, name, amount, acceptRate? }]
      */
-    addEventSettlementBatch(platform, weekLabel, region, records) {
+    addEventSettlementBatch(platform, dateOrWeek, region, records) {
         const settles = this.getEventSettlements();
         const batch = {
             batchId:    'EB_' + Date.now(),
             platform,
-            weekLabel,
+            date:       dateOrWeek,   // YYYY-MM-DD 형식 (일정산) 또는 주차 문자열
+            weekLabel:  dateOrWeek,   // 룰렛/랭킹 필터와 호환성 유지
             region:     region.trim(),
             uploadedAt: new Date().toISOString(),
             records
@@ -117,6 +118,12 @@ const eventDb = {
         this._saveLocal(this._settleKey, settles);
         this._push(this._fbSettleUrl, settles);
         return batch;
+    },
+
+    updateBatchDate(batchId, date) {
+        const settles = this.getEventSettlements();
+        const b = settles.find(s => s.batchId === batchId);
+        if (b) { b.date = date; this._saveLocal(this._settleKey, settles); this._push(this._fbSettleUrl, settles); }
     },
 
     deleteEventSettlementBatch(batchId) {
