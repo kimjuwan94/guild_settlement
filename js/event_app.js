@@ -5,7 +5,7 @@
  * - 보상 주정산 연동
  */
 const eventApp = {
-    _tab: 'roulette',        // 'roulette' | 'ranking' | 'history'
+    _tab: 'upload',         // 'upload' | 'roulette' | 'ranking' | 'history'
     _pool: [],               // 현재 룰렛 후보 목록
     _winners: [],            // 이번 세션 당첨자
     _spinAngle: 0,
@@ -14,6 +14,7 @@ const eventApp = {
 
     render(container) {
         const tabs = [
+            { id: 'upload',   label: '📤 정산서 업로드' },
             { id: 'roulette', label: '🎡 룰렛 추첨기' },
             { id: 'ranking',  label: '🏆 랭킹 보드' },
             { id: 'history',  label: '📋 이벤트 내역' },
@@ -27,9 +28,10 @@ const eventApp = {
             </button>`).join('');
 
         let body = '';
-        if (this._tab === 'roulette') body = this._renderRoulette();
-        else if (this._tab === 'ranking') body = this._renderRanking();
-        else body = this._renderHistory();
+        if      (this._tab === 'upload')   body = this._renderUpload();
+        else if (this._tab === 'roulette') body = this._renderRoulette();
+        else if (this._tab === 'ranking')  body = this._renderRanking();
+        else                               body = this._renderHistory();
 
         container.innerHTML = `
             <div class="max-w-6xl mx-auto">
@@ -46,9 +48,100 @@ const eventApp = {
         if (this._tab === 'roulette' && this._pool.length > 0) this._redraw();
     },
 
+    // ── 정산서 업로드 탭 ───────────────────────────────────
+    _renderUpload() {
+        const batches  = eventDb.getEventSettlements();
+        const batchRows = batches.slice().reverse().map(b => {
+            const platBadge = b.platform === 'baemin'
+                ? '<span class="px-2 py-0.5 bg-teal-100 text-teal-700 text-xs font-bold rounded">배민</span>'
+                : '<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded">쿠팡</span>';
+            return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 text-sm">
+                    <td class="py-2 px-4">${platBadge}</td>
+                    <td class="py-2 px-4 font-medium">${b.weekLabel}</td>
+                    <td class="py-2 px-4">${b.region || '-'}</td>
+                    <td class="py-2 px-4 text-center">${(b.records||[]).length}명</td>
+                    <td class="py-2 px-4 text-xs text-gray-400">${new Date(b.uploadedAt).toLocaleString()}</td>
+                    <td class="py-2 px-4 text-right">
+                        <button onclick="eventApp._deleteBatch('${b.batchId}')"
+                            class="text-red-400 hover:text-red-600 text-xs border border-red-200 px-2 py-1 rounded hover:bg-red-50">삭제</button>
+                    </td>
+                </tr>`;
+        }).join('');
+
+        return `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
+                <!-- 배민 업로드 -->
+                <div class="glass-panel rounded-xl border border-teal-200 p-6 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1.5 h-full bg-teal-500"></div>
+                    <h3 class="font-bold text-gray-800 mb-1 flex items-center">
+                        <i data-lucide="bike" class="w-5 h-5 mr-2 text-teal-600"></i> 배민 정산서 업로드
+                    </h3>
+                    <p class="text-xs text-gray-500 mb-4">이벤트 전용 — 소득신고 정산과 별도 저장됩니다.</p>
+                    <div class="space-y-2 mb-4">
+                        <input type="text" id="ev-up-week-b" placeholder="주차 (예: 2026-05-1)"
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-400 focus:outline-none">
+                        <input type="text" id="ev-up-region-b" placeholder="권역 (예: 김해북부)"
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-400 focus:outline-none">
+                        <input type="file" id="ev-file-b" accept=".xlsx,.xls" multiple
+                            class="w-full text-sm border rounded-lg px-3 py-2">
+                    </div>
+                    <button onclick="eventApp._parseAndUpload('baemin')"
+                        class="w-full bg-teal-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-teal-700 transition-all">
+                        파일 파싱 및 이벤트 DB 저장
+                    </button>
+                </div>
+
+                <!-- 쿠팡 업로드 -->
+                <div class="glass-panel rounded-xl border border-red-200 p-6 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
+                    <h3 class="font-bold text-gray-800 mb-1 flex items-center">
+                        <i data-lucide="truck" class="w-5 h-5 mr-2 text-red-600"></i> 쿠팡 정산서 업로드
+                    </h3>
+                    <p class="text-xs text-gray-500 mb-4">이벤트 전용 — 소득신고 정산과 별도 저장됩니다.</p>
+                    <div class="space-y-2 mb-4">
+                        <input type="text" id="ev-up-week-c" placeholder="주차 (예: 2026-05-1)"
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 focus:outline-none">
+                        <input type="text" id="ev-up-region-c" placeholder="권역 (예: 김해북부)"
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 focus:outline-none">
+                        <input type="file" id="ev-file-c" accept=".xlsx,.xls" multiple
+                            class="w-full text-sm border rounded-lg px-3 py-2">
+                    </div>
+                    <button onclick="eventApp._parseAndUpload('coupang')"
+                        class="w-full bg-red-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-red-700 transition-all">
+                        파일 파싱 및 이벤트 DB 저장
+                    </button>
+                </div>
+            </div>
+
+            <!-- 업로드 내역 -->
+            <div class="glass-panel rounded-xl border border-gray-100 p-6">
+                <h3 class="font-bold text-gray-800 mb-4">이벤트 정산서 업로드 내역 (${batches.length}건)</h3>
+                ${batches.length === 0
+                    ? '<p class="text-center text-gray-400 text-sm py-6">업로드된 이벤트 정산서가 없습니다.</p>'
+                    : `<div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                                <tr>
+                                    <th class="py-2 px-4">플랫폼</th>
+                                    <th class="py-2 px-4">주차</th>
+                                    <th class="py-2 px-4">권역</th>
+                                    <th class="py-2 px-4 text-center">인원</th>
+                                    <th class="py-2 px-4">업로드 시각</th>
+                                    <th class="py-2 px-4"></th>
+                                </tr>
+                            </thead>
+                            <tbody>${batchRows}</tbody>
+                        </table>
+                    </div>`
+                }
+            </div>`;
+    },
+
     // ── 룰렛 탭 ─────────────────────────────────────────────
     _renderRoulette() {
-        const weeks = incomeDb.getUniqueWeekLabels();
+        const weeks   = eventDb.getUniqueWeeks();
         const regions = eventDb.getUniqueRegions();
         const weekOpts = weeks.map(w => `<option value="${w}">${w}</option>`).join('');
         const regionOpts = regions.map(r => `<option value="${r}">${r}</option>`).join('');
@@ -155,7 +248,7 @@ const eventApp = {
 
     // ── 랭킹 탭 ─────────────────────────────────────────────
     _renderRanking() {
-        const weeks = incomeDb.getUniqueWeekLabels();
+        const weeks   = eventDb.getUniqueWeeks();
         const regions = eventDb.getUniqueRegions();
         return `
             <div class="glass-panel rounded-xl border border-gray-100 p-6">
@@ -286,6 +379,53 @@ const eventApp = {
                 </thead>
                 <tbody>${rows}</tbody>
             </table>`;
+    },
+
+    _deleteBatch(batchId) {
+        if (!confirm('이 정산서를 삭제하시겠습니까?')) return;
+        eventDb.deleteEventSettlementBatch(batchId);
+        this.render(document.getElementById('app-content'));
+    },
+
+    async _parseAndUpload(platform) {
+        const suffix = platform === 'baemin' ? 'b' : 'c';
+        const weekEl   = document.getElementById(`ev-up-week-${suffix}`);
+        const regionEl = document.getElementById(`ev-up-region-${suffix}`);
+        const fileEl   = document.getElementById(`ev-file-${suffix}`);
+
+        const weekLabel = (weekEl?.value || '').trim();
+        const region    = (regionEl?.value || '').trim();
+        const files     = fileEl ? Array.from(fileEl.files) : [];
+
+        if (!weekLabel) { alert('주차를 입력하세요. (예: 2026-05-1)'); return; }
+        if (!region)    { alert('권역을 입력하세요. (예: 김해북부)'); return; }
+        if (files.length === 0) { alert('파일을 선택하세요.'); return; }
+
+        let totalAdded = 0;
+        for (const file of files) {
+            try {
+                let records;
+                if (platform === 'baemin') {
+                    records = await IncomeExcelParser.parseBaemin(file, [], weekLabel);
+                } else {
+                    records = await IncomeExcelParser.parseCoupang(file, [], weekLabel);
+                }
+                if (records && records.length > 0) {
+                    eventDb.addEventSettlementBatch(platform, weekLabel, region, records);
+                    totalAdded += records.length;
+                }
+            } catch (err) {
+                console.error('[eventApp] parse error:', err);
+                alert(`파일 파싱 오류: ${file.name}\n${err.message}`);
+            }
+        }
+
+        if (totalAdded > 0) {
+            alert(`✅ 업로드 완료!\n${files.length}개 파일 → ${totalAdded}명 데이터 이벤트 DB에 저장`);
+            this.render(document.getElementById('app-content'));
+        } else {
+            alert('유효한 데이터가 없습니다. 파일 형식을 확인하세요.');
+        }
     },
 
     _resetSession() {
