@@ -133,11 +133,17 @@ const eventDb = {
     },
 
     // ── 룰렛 후보 추출 (이벤트 전용 정산서 기준) ──────────
-    getRouletteCandidates(weekLabel, region, acceptRateMin, excludeIds) {
+    getRouletteCandidates(startDate, endDate, region, acceptRateMin, excludeIds) {
         const settles = this.getEventSettlements().filter(b => {
-            const wm = !weekLabel || b.weekLabel === weekLabel;
-            const rm = !region   || region === '전체' || b.region === region;
-            return wm && rm;
+            const dateStr = b.date || b.weekLabel || '';
+            const batchStart = dateStr.split('~')[0].trim();
+            const batchEnd = dateStr.includes('~') ? dateStr.split('~')[1].trim() : batchStart;
+            
+            const startOk = !startDate || batchEnd >= startDate;
+            const endOk   = !endDate   || batchStart <= endDate;
+            const rm = !region || region === '전체' || b.region === region;
+            
+            return startOk && endOk && rm;
         });
 
         const riderMap = {};
@@ -146,25 +152,37 @@ const eventDb = {
                 if (!rec.riderId && !rec.name) return;
                 const key = rec.riderId || rec.name;
                 if (!riderMap[key]) {
-                    riderMap[key] = { riderId: key, name: rec.name || key, deliveries: 0, amount: 0, acceptRate: null };
+                    riderMap[key] = { 
+                        riderId: key, 
+                        name: rec.displayName || rec.name || key, // 마스킹/ID 적용된 표시 이름
+                        deliveries: 0, 
+                        amount: 0, 
+                        acceptRate: null 
+                    };
                 }
                 riderMap[key].deliveries += 1;
-                riderMap[key].amount     += (rec.amount || 0);
+                riderMap[key].amount     += (rec.amount || 0); // 콜 수
                 if (rec.acceptRate != null) riderMap[key].acceptRate = rec.acceptRate;
             });
         });
 
         let candidates = Object.values(riderMap);
+        // 1콜 이상인 라이더만 (amount가 콜 수)
+        candidates = candidates.filter(r => r.amount >= 1);
+
         if (acceptRateMin > 0)
             candidates = candidates.filter(r => r.acceptRate === null || r.acceptRate >= acceptRateMin);
         if (excludeIds && excludeIds.length > 0)
             candidates = candidates.filter(r => !excludeIds.includes(r.riderId));
+        
+        // 랭킹 등 다른 곳에서도 일관되게 표시되도록 deliveries를 amount(총 콜 수)로 일치시킴
+        candidates.forEach(c => { c.deliveries = c.amount; });
         return candidates;
     },
 
     /** 랭킹 집계 */
-    getRanking(weekLabel, region, acceptRateMin, excludeIds, topN = 10) {
-        return this.getRouletteCandidates(weekLabel, region, acceptRateMin, excludeIds)
+    getRanking(startDate, endDate, region, acceptRateMin, excludeIds, topN = 10) {
+        return this.getRouletteCandidates(startDate, endDate, region, acceptRateMin, excludeIds)
             .sort((a, b) => b.deliveries - a.deliveries)
             .slice(0, topN);
     },

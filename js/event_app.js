@@ -254,10 +254,14 @@ const eventApp = {
                         </h3>
                         <div class="space-y-3">
                             <div>
-                                <label class="text-xs font-bold text-gray-500 mb-1 block">대상 주차</label>
-                                <select id="ev-week" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
-                                    <option value="">-- 주차 선택 --</option>${weekOpts}
-                                </select>
+                                <label class="text-xs font-bold text-gray-500 mb-1 block">대상 기간</label>
+                                <div class="flex items-center gap-1">
+                                    <input type="date" id="ev-start" value="${new Date().toISOString().slice(0,10)}"
+                                        class="w-full border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
+                                    <span class="text-gray-400">~</span>
+                                    <input type="date" id="ev-end" value="${new Date().toISOString().slice(0,10)}"
+                                        class="w-full border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
+                                </div>
                             </div>
                             <div>
                                 <label class="text-xs font-bold text-gray-500 mb-1 block">권역</label>
@@ -339,10 +343,11 @@ const eventApp = {
         return `
             <div class="glass-panel rounded-xl border border-gray-100 p-6">
                 <div class="flex flex-wrap gap-3 mb-6">
-                    <select id="rank-week" class="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
-                        <option value="">-- 주차 선택 --</option>
-                        ${weeks.map(w => `<option value="${w}">${w}</option>`).join('')}
-                    </select>
+                    <div class="flex items-center gap-1 border rounded-lg px-2 bg-white focus-within:ring-2 focus-within:ring-yellow-400">
+                        <input type="date" id="rank-start" value="${new Date().toISOString().slice(0,10)}" class="py-2 text-sm focus:outline-none bg-transparent">
+                        <span class="text-gray-400">~</span>
+                        <input type="date" id="rank-end" value="${new Date().toISOString().slice(0,10)}" class="py-2 text-sm focus:outline-none bg-transparent">
+                    </div>
                     <select id="rank-region" class="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
                         ${regions.map(r => `<option value="${r}">${r}</option>`).join('')}
                     </select>
@@ -410,15 +415,16 @@ const eventApp = {
 
     // ── 액션 ────────────────────────────────────────────────
     _loadPool() {
-        const week   = document.getElementById('ev-week')?.value || '';
+        const start  = document.getElementById('ev-start')?.value || '';
+        const end    = document.getElementById('ev-end')?.value || '';
         const region = document.getElementById('ev-region')?.value || '전체';
         const accept = parseFloat(document.getElementById('ev-accept')?.value || '0');
 
-        if (!week) { alert('대상 주차를 선택하세요.'); return; }
+        if (!start || !end) { alert('대상 기간을 선택하세요.'); return; }
 
         this._winners = [];
         this._spinAngle = 0;
-        this._pool = eventDb.getRouletteCandidates(week, region, accept, []);
+        this._pool = eventDb.getRouletteCandidates(start, end, region, accept, []);
 
         if (this._pool.length === 0) {
             alert('해당 조건의 후보가 없습니다.\n정산서가 업로드되어 있는지 확인하세요.');
@@ -429,13 +435,14 @@ const eventApp = {
     },
 
     _loadRanking() {
-        const week   = document.getElementById('rank-week')?.value || '';
+        const start  = document.getElementById('rank-start')?.value || '';
+        const end    = document.getElementById('rank-end')?.value || '';
         const region = document.getElementById('rank-region')?.value || '전체';
         const accept = parseFloat(document.getElementById('rank-accept')?.value || '0');
 
-        if (!week) { alert('주차를 선택하세요.'); return; }
+        if (!start || !end) { alert('기간을 선택하세요.'); return; }
 
-        const ranking = eventDb.getRanking(week, region, accept, []);
+        const ranking = eventDb.getRanking(start, end, region, accept, []);
         const resultDiv = document.getElementById('ranking-result');
         if (!resultDiv) return;
 
@@ -570,24 +577,29 @@ const eventApp = {
 
                     const dataRows = rawRows.slice(headerRowIdx + 1);
                     dataRows.forEach(row => {
-                        let name = (row[nameIdx] || '').toString().trim();
-                        if (!name) return;
+                        let rawName = (row[nameIdx] || '').toString().trim();
+                        if (!rawName) return;
 
-                        const m = name.match(/^(.*?)([0-9]{4})$/);
-                        if(m) name = m[1].trim();
+                        let filePhone = '';
+                        const m = rawName.match(/^(.*?)([0-9]{4})$/);
+                        let name = rawName;
+                        if (m) {
+                            name = m[1].trim();
+                            filePhone = m[2];
+                        }
 
                         if (isDaily) {
                             if (statusIdx !== -1) {
                                 const status = (row[statusIdx] || '').toString();
                                 if (['취소', '반려', 'cancel', 'rejected'].some(s => status.includes(s))) return;
                             }
-                            if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0 };
+                            if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0, filePhone };
                             tempMap[name].count += 1;
                         } else {
                             const count = parseFloat((row[countIdx] || 0).toString().replace(/,/g,''));
                             const accept = parseFloat((row[acceptIdx] || '0').toString().replace(/%/g,''));
                             if (count > 0) {
-                                if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0 };
+                                if (!tempMap[name]) tempMap[name] = { count: 0, acceptRate: 0, filePhone };
                                 tempMap[name].count += count;
                                 tempMap[name].acceptRate = accept || 0;
                             }
@@ -602,9 +614,26 @@ const eventApp = {
                             const dbNames = (m.name||'').split(',').map(n=>n.trim());
                             return dbNames.includes(name);
                         });
+
+                        // ── Display Name 포맷 결정 ──
+                        let displayName = name;
+                        if (platform === 'baemin') {
+                            displayName = (member && member.baeminId) ? member.baeminId.split(',')[0].trim() : name;
+                        } else if (platform === 'coupang') {
+                            let masked = name;
+                            if (masked.length >= 3) {
+                                masked = masked.slice(0,1) + '*' + masked.slice(2);
+                            } else if (masked.length === 2) {
+                                masked = masked.slice(0,1) + '*';
+                            }
+                            const phone = (member && member.coupangPhone) ? member.coupangPhone.split(',')[0].trim() : data.filePhone;
+                            displayName = `${masked}${phone}`;
+                        }
+
                         records.push({
                             riderId: member ? member.id : `UNKNOWN_${Date.now()}_${Math.random().toString(36).substr(2,5)}`,
                             name: name,
+                            displayName: displayName,
                             amount: data.count, // eventDb는 콜 수를 amount 필드에 저장
                             acceptRate: data.acceptRate || 0
                         });

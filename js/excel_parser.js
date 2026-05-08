@@ -279,16 +279,6 @@ const ExcelParser = {
      * 파일명에서 권역 이름 추출
      */
     detectRegionFromFilename(filename) {
-        // 명시적 키워드 우선 매칭
-        if (filename.includes('김해A')) return '김해A';
-        if (filename.includes('김해B')) return '김해B';
-        if (filename.includes('김해북부')) return '김해북부';
-        if (filename.includes('김해남부')) return '김해남부';
-        if (filename.includes('김해장유')) return '김해장유';
-        if (filename.includes('장유')) return '장유';
-        if (filename.includes('창원')) return '창원';
-        if (filename.includes('부산')) return '부산';
-
         let name = filename.replace(/\.[^/.]+$/, ""); // 확장자 제거
         
         // 배민/쿠팡 파일명의 고정 패턴 및 날짜 제거
@@ -301,7 +291,7 @@ const ExcelParser = {
         // 공통 불필요 단어 제거
         const dropWords = [
             '배달처리비', '주식회사', '플로체퍼스트', '플로체스페이스', 
-            '표준경남', '배달의민족', '배민', '쿠팡이츠', '쿠팡', 
+            '표준경남', '경남', '배달의민족', '배민', '쿠팡이츠', '쿠팡', 
             '정산서', '일정산', '주정산', '업로드'
         ];
         dropWords.forEach(w => {
@@ -314,7 +304,7 @@ const ExcelParser = {
         // 특수기호 제거
         name = name.replace(/[()\[\]{}_-]/g, ' ');
         
-        // 남은 단어들 중 첫 번째 유효 단어를 권역으로 사용
+        // 남은 단어들 중 유효 단어를 조합하여 권역으로 사용
         const parts = name.split(/\s+/).filter(p => p.trim().length > 0 && isNaN(p));
         if (parts.length > 0) {
             return parts.join(' ');
