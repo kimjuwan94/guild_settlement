@@ -594,7 +594,7 @@ const eventApp = {
                         }
                     });
 
-                    const activeMembers = (typeof db !== 'undefined' ? db.getGuildMembers() : []) || [];
+                    const activeMembers = (typeof db !== 'undefined' ? db.getMembers() : []) || [];
                     const records = [];
                     for (const [name, data] of Object.entries(tempMap)) {
                         const member = activeMembers.find(m => {
