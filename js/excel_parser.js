@@ -248,31 +248,74 @@ const ExcelParser = {
     },
 
     /**
-     * 파일명에서 YYYY-MM-DD 형식의 날짜 추출 (일정산용)
+     * 파일명에서 정산 날짜/주차 추출 (배민/쿠팡 파일명 패턴 대응)
      */
     detectDateFromFilename(filename) {
-        const m = filename.match(/(\d{4})[-.](\d{1,2})[-.](\d{1,2})/);
-        if (m) {
-            return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
-        }
-        // YY.MM.DD 또는 YYMMDD 형태 등은 필요시 추가
+        // 1. 배민 주정산 (예: 20260415~20260421_...)
+        let m = filename.match(/(\d{4})(\d{2})(\d{2})~(\d{4})(\d{2})(\d{2})/);
+        if (m) return `${m[1]}-${m[2]}-${m[3]} ~ ${m[4]}-${m[5]}-${m[6]}`;
+
+        // 2. 배민 일정산 (범위) (예: 배달처리비_..._20260429_20260505)
+        m = filename.match(/(\d{4})(\d{2})(\d{2})_(\d{4})(\d{2})(\d{2})/);
+        if (m) return `${m[1]}-${m[2]}-${m[3]} ~ ${m[4]}-${m[5]}-${m[6]}`;
+
+        // 3. 쿠팡 주정산 (예: 플로체..._2026_03-2)
+        m = filename.match(/(\d{4})_(\d{2})-(\d{1,2})/);
+        if (m) return `${m[1]}-${m[2]}월 ${m[3]}주차`;
+
+        // 4. 쿠팡 일정산 (예: 플로체..._20260503)
+        // 위 정규식들이 매칭되지 않은 상태에서 8자리 연속 숫자를 찾음
+        m = filename.match(/(?:_|^|[^0-9])(\d{4})(\d{2})(\d{2})(?:_|$|[^0-9])/);
+        if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+
+        // 5. 일반 YYYY-MM-DD
+        m = filename.match(/(\d{4})[-.](\d{1,2})[-.](\d{1,2})/);
+        if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+
         return null;
     },
 
     /**
-     * 파일명에서 권역 이름 추출 (불필요한 단어 제거 후 남은 텍스트)
+     * 파일명에서 권역 이름 추출
      */
     detectRegionFromFilename(filename) {
+        // 명시적 키워드 우선 매칭
+        if (filename.includes('김해A')) return '김해A';
+        if (filename.includes('김해B')) return '김해B';
+        if (filename.includes('김해북부')) return '김해북부';
+        if (filename.includes('김해남부')) return '김해남부';
+        if (filename.includes('김해장유')) return '김해장유';
+        if (filename.includes('장유')) return '장유';
+        if (filename.includes('창원')) return '창원';
+        if (filename.includes('부산')) return '부산';
+
         let name = filename.replace(/\.[^/.]+$/, ""); // 확장자 제거
-        // 날짜 패턴 제거
+        
+        // 배민/쿠팡 파일명의 고정 패턴 및 날짜 제거
+        name = name.replace(/\d{8}~\d{8}/g, '');
+        name = name.replace(/\d{8}_\d{8}/g, '');
+        name = name.replace(/\d{4}_\d{2}-\d{1,2}/g, '');
+        name = name.replace(/\d{8}/g, '');
         name = name.replace(/\d{4}[-.]\d{1,2}[-.]\d{1,2}/g, '');
-        // 공통 단어 제거
-        name = name.replace(/배달의민족|배민|쿠팡이츠|쿠팡|정산서|일정산|주정산|업로드/g, '');
+        
+        // 공통 불필요 단어 제거
+        const dropWords = [
+            '배달처리비', '주식회사', '플로체퍼스트', '플로체스페이스', 
+            '표준경남', '배달의민족', '배민', '쿠팡이츠', '쿠팡', 
+            '정산서', '일정산', '주정산', '업로드'
+        ];
+        dropWords.forEach(w => {
+            name = name.split(w).join(' ');
+        });
+        
+        // DP로 시작하는 배민 식별코드 제거 (예: DP2604063114)
+        name = name.replace(/DP\d+/g, ' ');
+
         // 특수기호 제거
         name = name.replace(/[()\[\]{}_-]/g, ' ');
         
-        // 남은 단어들을 조합하여 권역으로 사용
-        const parts = name.split(/\s+/).filter(p => p.trim().length > 0);
+        // 남은 단어들 중 첫 번째 유효 단어를 권역으로 사용
+        const parts = name.split(/\s+/).filter(p => p.trim().length > 0 && isNaN(p));
         if (parts.length > 0) {
             return parts.join(' ');
         }
