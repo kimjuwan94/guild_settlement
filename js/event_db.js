@@ -104,7 +104,10 @@ const eventDb = {
      * @param {Array}  records   - [{ riderId, name, amount, acceptRate? }]
      */
     addEventSettlementBatch(platform, dateOrWeek, region, records, skipPush = false) {
-        const settles = this.getEventSettlements();
+        let settles = this.getEventSettlements();
+        // 중복 방지: 동일한 플랫폼, 날짜, 권역의 정산서가 이미 존재하면 덮어쓰기(삭제 후 추가)
+        settles = settles.filter(b => !(b.platform === platform && b.date === dateOrWeek && b.region === region.trim()));
+
         const batch = {
             batchId:    'EB_' + Date.now() + Math.floor(Math.random()*1000), // 빠른 루프 시 중복 ID 방지
             platform,
