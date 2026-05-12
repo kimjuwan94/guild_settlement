@@ -417,7 +417,7 @@ const eventApp = {
         const pastEvents = eventDb.getEvents();
         const prevWinnerIds = [];
         pastEvents.forEach(ev => {
-            if (ev.winners) {
+            if (ev.type === 'roulette' && ev.winners) {
                 ev.winners.forEach(w => prevWinnerIds.push(w.riderId || w.name));
             }
         });
@@ -441,7 +441,16 @@ const eventApp = {
 
         if (!start || !end) { alert('기간을 선택하세요.'); return; }
 
-        const ranking = eventDb.getRanking(start, end, region, 0, []);
+        // 이벤트 내역(히스토리)에 남은 랭킹 이벤트 당첨자 추출 (랭킹 보드 배제용)
+        const pastEvents = eventDb.getEvents();
+        const prevRankingWinners = [];
+        pastEvents.forEach(ev => {
+            if (ev.type === 'ranking' && ev.winners) {
+                ev.winners.forEach(w => prevRankingWinners.push(w.riderId || w.name));
+            }
+        });
+
+        const ranking = eventDb.getRanking(start, end, region, 0, prevRankingWinners);
         const resultDiv = document.getElementById('ranking-result');
         if (!resultDiv) return;
 
@@ -458,8 +467,10 @@ const eventApp = {
                 <td class="py-3 px-4 text-blue-700 font-bold text-center">${r.deliveries}콜</td>
             </tr>`).join('');
 
+        this._currentRanking = ranking;
+
         resultDiv.innerHTML = `
-            <table class="w-full text-left text-sm">
+            <table class="w-full text-left text-sm mb-6">
                 <thead class="bg-gray-50 text-xs uppercase text-gray-500">
                     <tr>
                         <th class="py-3 px-4">순위</th>
@@ -468,7 +479,74 @@ const eventApp = {
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
-            </table>`;
+            </table>
+            
+            <div class="bg-yellow-50 p-5 rounded-xl border border-yellow-200 shadow-sm mt-6">
+                <h4 class="font-black text-yellow-800 mb-3 flex items-center">
+                    <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+                    랭킹 1~3위 보상 확정
+                </h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 mb-1 block">보상 명칭</label>
+                        <input type="text" id="rank-label" value="랭킹 이벤트 당첨" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 mb-1 block">1위 보상(원)</label>
+                        <input type="number" id="rank-reward-1" value="100000" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 mb-1 block">2위 보상(원)</label>
+                        <input type="number" id="rank-reward-2" value="50000" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 mb-1 block">3위 보상(원)</label>
+                        <input type="number" id="rank-reward-3" value="30000" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
+                    </div>
+                </div>
+                <button onclick="eventApp._confirmRankingRewards()" class="w-full bg-yellow-500 text-white font-bold py-2.5 rounded-lg hover:bg-yellow-600 transition-colors shadow-sm">
+                    상위 3명 보상 확정 및 이벤트 내역 저장
+                </button>
+            </div>
+            `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    _confirmRankingRewards() {
+        if (!this._currentRanking || this._currentRanking.length === 0) return;
+        
+        const topN = 3;
+        const winners = this._currentRanking.slice(0, topN);
+        
+        const start  = document.getElementById('rank-start')?.value || '';
+        const end    = document.getElementById('rank-end')?.value || '';
+        const region = document.getElementById('rank-region')?.value || '전체';
+        
+        const reward1 = parseInt(document.getElementById('rank-reward-1')?.value || '0');
+        const reward2 = parseInt(document.getElementById('rank-reward-2')?.value || '0');
+        const reward3 = parseInt(document.getElementById('rank-reward-3')?.value || '0');
+        const rewards = [reward1, reward2, reward3];
+        const label = document.getElementById('rank-label')?.value || '랭킹 이벤트 당첨';
+
+        const event = eventDb.createEvent({
+            weekLabel: `${start} ~ ${end}`, region, rewardAmount: reward1, rewardLabel: label,
+            title: `${start} ~ ${end} ${region} 랭킹 추첨`, type: 'ranking'
+        });
+
+        winners.forEach((w, i) => {
+            eventDb.addWinner(event.eventId, {
+                riderId: w.riderId, name: w.name,
+                rank: i + 1, deliveries: w.deliveries,
+                rewardAmount: rewards[i] || 0, rewardLabel: label
+            });
+        });
+
+        eventDb.confirmRewards(event.eventId);
+        alert(`✅ 랭킹 보상 확정 완료!\n1~3위 (${winners.map(w=>w.name).join(', ')}) 당첨 내역이 저장되었습니다.`);
+        
+        this._currentRanking = null;
+        this._tab = 'history';
+        this.render(document.getElementById('app-content'));
     },
 
     // ── 드래그&드롭 핸들러 ───────────────────────────────────
