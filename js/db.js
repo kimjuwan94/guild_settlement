@@ -442,6 +442,18 @@ const db = {
         return this.generateWeekName(wed);
     },
 
+    forceResetWeekly(settlementEngine) {
+        const data = this.getData();
+        const currentWeekName = this.getCurrentWeekName();
+        if (!currentWeekName) return false;
+
+        // 현재 쌓인 데이터를 현재 주차 이름으로 과거 정산 내역에 저장하고 모두 0으로 초기화
+        this._runFinalization(data, currentWeekName + " (수동마감)", settlementEngine);
+        
+        this.saveData(data);
+        return currentWeekName;
+    },
+
     // Internal finalization logic
     _runFinalization(data, weekName, settlementEngine) {
         // Calculate settlement for each guild and save to history

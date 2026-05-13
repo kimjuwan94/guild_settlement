@@ -772,6 +772,9 @@ const app = {
                         <p class="text-xs text-gray-500 mt-1">수요일 자정이 지나고 사이트 접속 시 시스템이 자동으로 데이터를 마감 처리하고 리셋합니다.</p>
                     </div>
                     <div class="flex space-x-3">
+                        <button onclick="app.handleForceReset()" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold border border-gray-300 hover:bg-gray-200 transition-colors shadow-sm flex items-center">
+                            <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>수동 주간 마감 (리셋)
+                        </button>
                         <button onclick="document.getElementById('admin-add-modal').classList.remove('hidden')" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm flex items-center">
                             <i data-lucide="plus" class="w-4 h-4 mr-2"></i>신규 길드 생성
                         </button>
@@ -904,6 +907,14 @@ const app = {
             db.rejectUpgrade(id);
             this.navigate('admin-overview');
         }
+    },
+
+    handleForceReset() {
+        if (!confirm('현재 쌓인 모든 길드의 주간 누적 실적을 과거 정산 내역으로 넘기고 0으로 초기화(리셋) 하시겠습니까?\n\n(참고: 시스템이 원래 매주 수요일에 이 작업을 자동으로 수행합니다)')) return;
+        
+        db.forceResetWeekly(SettlementEngine);
+        alert('주간 실적이 수동으로 마감되어 과거 내역으로 이동되었으며, 모든 콜수가 0으로 리셋되었습니다.');
+        this.renderAdmin(document.getElementById('app-content'));
     },
 
     renderAdminHistory(container, selectedWeek = null) {

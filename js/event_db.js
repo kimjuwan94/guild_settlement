@@ -184,19 +184,19 @@ const eventDb = {
     // ── 팀(길드) 관리 CRUD ────────────────────────────────
     getTeams() { return this._getLocal(this._teamsKey); },
     
-    saveTeam(teamId, teamName, leaderName, memberNamesStr) {
+    saveTeam(teamId, teamName, leaderName, memberNamesStr, targetCalls = 1000, rewardPerTarget = 100000) {
         let teams = this.getTeams();
         const memberNames = memberNamesStr.split(',').map(s => s.trim()).filter(s => s);
         
         if (teamId) {
             const idx = teams.findIndex(t => t.teamId === teamId);
             if (idx !== -1) {
-                teams[idx] = { ...teams[idx], teamName, leaderName, members: memberNames };
+                teams[idx] = { ...teams[idx], teamName, leaderName, members: memberNames, targetCalls, rewardPerTarget };
             }
         } else {
             teams.push({
                 teamId: 'TEAM_' + Date.now(),
-                teamName, leaderName, members: memberNames, createdAt: new Date().toISOString()
+                teamName, leaderName, members: memberNames, targetCalls, rewardPerTarget, createdAt: new Date().toISOString()
             });
         }
         this._saveLocal(this._teamsKey, teams);

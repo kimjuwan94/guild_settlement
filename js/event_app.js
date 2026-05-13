@@ -367,37 +367,41 @@ const eventApp = {
                 return `<span class="inline-block bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-700 mr-1 mb-1">${m} (${calls}콜)</span>`;
             }).join('');
             
-            const sets = Math.floor(totalCalls / 1000);
-            const reward = sets * 100000;
+            const targetCalls = t.targetCalls || 1000;
+            const rewardPerTarget = t.rewardPerTarget || 100000;
+            
+            const sets = Math.floor(totalCalls / targetCalls);
+            const reward = sets * rewardPerTarget;
 
             return `
-                <div class="bg-white border rounded-xl p-4 shadow-sm mb-4">
+                <div class="bg-white border rounded-xl p-4 shadow-sm mb-4 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
                     <div class="flex justify-between items-start mb-3">
-                        <div>
+                        <div class="pl-2">
                             <h4 class="font-bold text-indigo-800 text-lg flex items-center">
                                 <i data-lucide="shield" class="w-5 h-5 mr-1 text-indigo-500"></i> ${t.teamName}
                                 <span class="ml-2 text-sm font-normal text-gray-500">길드장: ${t.leaderName}</span>
                             </h4>
-                            <p class="text-xs text-gray-400 mt-1">소속 팀원: ${t.members.length}명</p>
+                            <p class="text-xs text-gray-400 mt-1">소속 팀원: ${t.members.length}명 <span class="mx-1">|</span> 미션 조건: ${targetCalls}콜 당 ${rewardPerTarget.toLocaleString()}원</p>
                         </div>
                         <div class="text-right">
                             <button onclick="eventApp._deleteTeam('${t.teamId}')" class="text-xs text-red-400 hover:text-red-600 underline">팀 삭제</button>
                         </div>
                     </div>
-                    <div class="mb-3">${memberDetails}</div>
-                    <div class="bg-indigo-50 rounded-lg p-3 flex justify-between items-center">
+                    <div class="mb-3 pl-2">${memberDetails}</div>
+                    <div class="bg-indigo-50 rounded-lg p-3 flex justify-between items-center ml-2">
                         <div class="text-sm">
                             <span class="text-gray-600">합산 콜 수:</span> <span class="font-bold text-indigo-600 text-lg">${totalCalls.toLocaleString()}콜</span>
                             <span class="text-xs text-indigo-400 ml-2">(${sets}세트 달성)</span>
                         </div>
                         <div class="text-right flex items-center gap-3">
-                            <div>
-                                <span class="text-xs text-gray-500 block">지급액 (1000콜당 10만원)</span>
-                                <span class="font-black text-blue-700 text-lg">${reward.toLocaleString()}원</span>
+                            <div class="text-right">
+                                <span class="text-[11px] text-gray-500 block leading-tight">지급액</span>
+                                <span class="font-black text-blue-700 text-lg leading-none">${reward.toLocaleString()}원</span>
                             </div>
                             <button onclick="eventApp._confirmTeamReward('${t.teamName}', '${t.leaderName}', ${reward}, ${totalCalls}, '${start} ~ ${end}')" 
                                 ${reward === 0 ? 'disabled' : ''}
-                                class="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-600 transition disabled:opacity-50">
+                                class="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-600 transition disabled:opacity-50 shadow-sm">
                                 보상 확정
                             </button>
                         </div>
@@ -427,8 +431,18 @@ const eventApp = {
                             <textarea id="new-team-members" rows="3" placeholder="예: 라이더1, 라이더2, 홍*동1234" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"></textarea>
                             <p class="text-xs text-gray-400 mt-1">정산서에 표기되는 이름이나 아이디를 입력하세요.</p>
                         </div>
-                        <button onclick="eventApp._saveTeam()" class="w-full bg-indigo-500 text-white font-bold py-2 rounded-lg hover:bg-indigo-600 transition">
-                            팀 등록 / 수정
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-600 mb-1">기준 콜수 (단위)</label>
+                                <input type="number" id="new-team-target" value="1000" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none bg-indigo-50 font-bold text-indigo-700">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-600 mb-1">단위당 지급액(원)</label>
+                                <input type="number" id="new-team-reward" value="100000" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none bg-indigo-50 font-bold text-indigo-700">
+                            </div>
+                        </div>
+                        <button onclick="eventApp._saveTeam()" class="w-full bg-indigo-500 text-white font-bold py-2 rounded-lg hover:bg-indigo-600 transition shadow">
+                            팀 등록 (조건부 저장)
                         </button>
                     </div>
                 </div>
@@ -457,9 +471,11 @@ const eventApp = {
         const name = document.getElementById('new-team-name').value.trim();
         const leader = document.getElementById('new-team-leader').value.trim();
         const members = document.getElementById('new-team-members').value.trim();
+        const targetCalls = parseInt(document.getElementById('new-team-target').value) || 1000;
+        const rewardPerTarget = parseInt(document.getElementById('new-team-reward').value) || 100000;
         
         if (!name || !leader || !members) { alert('팀 이름, 길드장, 팀원을 모두 입력하세요.'); return; }
-        eventDb.saveTeam(null, name, leader, members);
+        eventDb.saveTeam(null, name, leader, members, targetCalls, rewardPerTarget);
         this.render(document.getElementById('app-content'));
     },
 
