@@ -560,6 +560,19 @@ const app = {
             </tr>
         `).join('');
 
+        const guild = db.getGuildById(guildId);
+        const hasCustomRule = guild && guild.customRule && guild.customRule.targetCalls > 0;
+        const hasCustomInc = guild && guild.customIncentives && guild.customIncentives.length > 0;
+        const isCustomLimit = hasCustomRule || hasCustomInc;
+
+        const tierBadgeHtml = isCustomLimit 
+            ? `<span class="ml-3 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded-full border border-indigo-200">단일/인센티브 적용</span>`
+            : `<span id="display-tier-badge" class="ml-3 px-2 py-0.5 bg-primary-100 text-primary-700 text-xs rounded-full border border-primary-200">${db.getEffectiveTier(guildId)} 등급</span>`;
+        
+        const tierDescHtml = isCustomLimit
+            ? `<p class="text-xs text-gray-500 mt-1 italic">현재 인원: ${members.length}명 / 인원 제한 없음</p>`
+            : `<p class="text-xs text-gray-500 mt-1 italic">현재 인원: ${members.length}명 / 등급별 자동 조건 적용됨</p>`;
+
         container.innerHTML = `
             <div class="glass-panel rounded-xl border border-gray-100 p-6">
                 <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
@@ -567,9 +580,9 @@ const app = {
                         <h4 class="text-xs font-bold text-primary-600 uppercase tracking-widest mb-1">Guild Status</h4>
                         <h3 class="text-xl font-bold text-gray-800 flex items-center">
                             <i data-lucide="users" class="w-6 h-6 mr-2 text-primary-600"></i> 이번 주 소속 길드원 관리 
-                            <span id="display-tier-badge" class="ml-3 px-2 py-0.5 bg-primary-100 text-primary-700 text-xs rounded-full border border-primary-200">${db.getEffectiveTier(guildId)} 등급</span>
+                            ${tierBadgeHtml}
                         </h3>
-                        <p class="text-xs text-gray-500 mt-1 italic">현재 인원: ${members.length}명 / 등급별 자동 조건 적용됨</p>
+                        ${tierDescHtml}
                     </div>
                     <button type="button" onclick="app.showAddMemberModal()" class="inline-flex items-center justify-center px-5 py-2.5 bg-primary-600 text-white text-sm font-bold rounded-xl hover:bg-primary-700 transition-all shadow-lg hover:shadow-primary-200 active:scale-95">
                         <i data-lucide="plus" class="w-4 h-4 mr-2"></i> 길드원 직접 추가
@@ -752,6 +765,11 @@ const app = {
             const deliveries = db.getTotalDeliveriesForGuild(g.id);
             const settlement = SettlementEngine.calculateSettlement(activeCount, deliveries);
             
+            const hasCustomRule = g.customRule && g.customRule.targetCalls > 0;
+            const hasCustomInc = g.customIncentives && g.customIncentives.length > 0;
+            const isCustomLimit = hasCustomRule || hasCustomInc;
+            const displayTier = isCustomLimit ? '단일/인센티브' : settlement.tier;
+
             return `
                 <tr class="border-b border-gray-100 hover:bg-gray-50">
                     <td class="py-3 px-4 text-sm font-medium text-gray-900">${g.name}</td>
@@ -774,7 +792,7 @@ const app = {
                     </td>
                     <td class="py-3 px-4 text-sm text-gray-700 text-center">${activeCount}명</td>
                     <td class="py-3 px-4 text-sm text-blue-600 font-bold text-center">${deliveries.toLocaleString()}건</td>
-                    <td class="py-3 px-4 text-sm font-medium text-primary-700 text-center">${settlement.tier}</td>
+                    <td class="py-3 px-4 text-sm font-medium text-primary-700 text-center">${displayTier}</td>
                     <td class="py-3 px-4 text-sm text-right font-bold text-gray-900">${settlement.totalAmount.toLocaleString()}원</td>
                     <td class="py-3 px-4 text-sm text-center">
                         <div class="flex items-center justify-center space-x-2">
@@ -1676,14 +1694,21 @@ const app = {
         }
 
         try {
-            // 인원 제한 체크 (동적 등급 기준)
-            const currentTier = db.getEffectiveTier(guildId);
-            const limit = SettlementEngine.Tiers[currentTier].limit;
-            const currentCount = db.getHeadcountForGuild(guildId);
-            
-            if (currentCount >= limit) {
-                alert(`현재 ${currentTier} 등급의 최대 인원(${limit}명)에 도달했습니다. 더 많은 인원을 추가하려면 실적을 높여 등급을 올려야 합니다.`);
-                return;
+            // 인원 제한 체크 (동적 등급 기준) - 단일단가제 또는 월간인센티브 시 인원제한/등급 검증 무시
+            const guild = db.getGuildById(guildId);
+            const hasCustomRule = guild && guild.customRule && guild.customRule.targetCalls > 0;
+            const hasCustomInc = guild && guild.customIncentives && guild.customIncentives.length > 0;
+            const isCustomLimit = hasCustomRule || hasCustomInc;
+
+            if (!isCustomLimit) {
+                const currentTier = db.getEffectiveTier(guildId);
+                const limit = SettlementEngine.Tiers[currentTier]?.limit || 10;
+                const currentCount = db.getHeadcountForGuild(guildId);
+                
+                if (currentCount >= limit) {
+                    alert(`현재 ${currentTier} 등급의 최대 인원(${limit}명)에 도달했습니다. 더 많은 인원을 추가하려면 실적을 높여 등급을 올려야 합니다.`);
+                    return;
+                }
             }
 
             db.addMember(guildId, { name, baeminId, coupangPhone, memo });
