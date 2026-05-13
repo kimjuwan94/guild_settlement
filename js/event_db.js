@@ -18,6 +18,10 @@ const eventDb = {
     _fbParticipantsUrl: 'https://floche-gm-default-rtdb.firebaseio.com/event_participants.json',
     _participantsKey:   'guild_event_participants_v1',
 
+    // ── 팀/길드 관리 저장소 ──
+    _fbTeamsUrl:        'https://floche-gm-default-rtdb.firebaseio.com/event_teams.json',
+    _teamsKey:          'guild_event_teams_v1',
+
     // ── 내부 헬퍼 ──────────────────────────────────────────
     _getLocal(key)       { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } },
     _saveLocal(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} },
@@ -31,17 +35,21 @@ const eventDb = {
     // ── 초기 로드 (이벤트 + 정산서 동시) ──────────────────
     async load() {
         try {
-            const [r1, r2, r3] = await Promise.all([
+            const [r1, r2, r3, r4] = await Promise.all([
                 fetch(this._firebaseUrl),
                 fetch(this._fbSettleUrl),
-                fetch(this._fbParticipantsUrl)
+                fetch(this._fbParticipantsUrl),
+                fetch(this._fbTeamsUrl)
             ]);
             const events       = await r1.json();
             const settles      = await r2.json();
             const participants = await r3.json();
+            const teams        = await r4.json();
+            
             this._saveLocal(this._localKey,       Array.isArray(events)       ? events       : []);
             this._saveLocal(this._settleKey,      Array.isArray(settles)      ? settles      : []);
             this._saveLocal(this._participantsKey, Array.isArray(participants) ? participants : []);
+            this._saveLocal(this._teamsKey,       Array.isArray(teams)        ? teams        : []);
         } catch (e) {
             console.warn('[eventDb] Firebase load failed, using local:', e.message);
         }
@@ -171,6 +179,34 @@ const eventDb = {
         this._saveLocal(this._participantsKey, list);
         this._push(this._fbParticipantsUrl, list);
         return p.status;
+    },
+
+    // ── 팀(길드) 관리 CRUD ────────────────────────────────
+    getTeams() { return this._getLocal(this._teamsKey); },
+    
+    saveTeam(teamId, teamName, leaderName, memberNamesStr) {
+        let teams = this.getTeams();
+        const memberNames = memberNamesStr.split(',').map(s => s.trim()).filter(s => s);
+        
+        if (teamId) {
+            const idx = teams.findIndex(t => t.teamId === teamId);
+            if (idx !== -1) {
+                teams[idx] = { ...teams[idx], teamName, leaderName, members: memberNames };
+            }
+        } else {
+            teams.push({
+                teamId: 'TEAM_' + Date.now(),
+                teamName, leaderName, members: memberNames, createdAt: new Date().toISOString()
+            });
+        }
+        this._saveLocal(this._teamsKey, teams);
+        this._push(this._fbTeamsUrl, teams);
+    },
+
+    deleteTeam(teamId) {
+        let teams = this.getTeams().filter(t => t.teamId !== teamId);
+        this._saveLocal(this._teamsKey, teams);
+        this._push(this._fbTeamsUrl, teams);
     },
 
     // ── 룰렛 후보 추출 (이벤트 전용 정산서 기준) ──────────
