@@ -334,7 +334,7 @@ const eventApp = {
     },
 
     _toggleRiderStatus(riderId, name, region) {
-        if (!confirm(\`'\${name}' 라이더를 탈퇴/복구 처리하시겠습니까?\\n탈퇴 시 이벤트 당첨 및 랭킹에서 즉시 제외됩니다.\`)) return;
+        if (!confirm(`'${name}' 라이더를 탈퇴/복구 처리하시겠습니까?\n탈퇴 시 이벤트 당첨 및 랭킹에서 즉시 제외됩니다.`)) return;
         eventDb.toggleParticipantStatus(riderId, name, region);
         this._refreshRiders();
     },
