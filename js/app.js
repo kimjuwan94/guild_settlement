@@ -721,7 +721,7 @@ const app = {
                                 <div class="font-mono text-xs bg-gray-100 px-2 py-1 rounded inline-block">ID: ${g.username}</div>
                                 <div class="font-mono text-xs bg-red-50 text-red-600 px-2 py-1 rounded inline-block mt-1">PW: ${g.password}</div>
                             </div>
-                            <button onclick="app.promptEditAccount('${g.id}', '${g.username}', '${g.password}', '${g.bankName || ''}', '${g.accountNumber || ''}')" class="text-gray-400 hover:text-blue-600 transition-colors" title="계정 및 계좌 정보 수정">
+                            <button onclick="app.promptEditAccount('${g.id}', '${g.username}', '${g.password}', '${g.bankName || ''}', '${g.accountNumber || ''}', '${encodeURIComponent(JSON.stringify(g.customTiers || {}))}')" class="text-gray-400 hover:text-blue-600 transition-colors" title="계정 및 계좌/등급 정보 수정">
                                 <i data-lucide="pencil" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -816,6 +816,27 @@ const app = {
                                 <label class="block text-sm font-medium text-gray-700 mb-1">길드장(GM) 이름</label>
                                 <input type="text" id="g-gmname" required placeholder="예: 김길동" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
                             </div>
+                            
+                            <!-- Custom Tier Settings (Optional) -->
+                            <div class="mt-4 border-t pt-4">
+                                <h4 class="text-sm font-bold text-gray-800 mb-2">등급별 정산 기준 설정 (선택)</h4>
+                                <p class="text-xs text-gray-500 mb-3">비워둘 경우 기본 시스템 설정이 적용됩니다. (기본- Gold: 20명/8만, Silver: 15명/7만, Bronze: 10명/6만)</p>
+                                
+                                <div class="space-y-3">
+                                    <div class="grid grid-cols-2 gap-2 bg-yellow-50 p-2 rounded border border-yellow-200">
+                                        <div><label class="text-xs font-bold text-yellow-800">Gold 최소 인원</label><input type="number" id="g-gold-min" placeholder="20" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-xs font-bold text-yellow-800">단위당 금액(원)</label><input type="number" id="g-gold-price" placeholder="80000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 bg-gray-100 p-2 rounded border border-gray-300">
+                                        <div><label class="text-xs font-bold text-gray-700">Silver 최소 인원</label><input type="number" id="g-silver-min" placeholder="15" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-xs font-bold text-gray-700">단위당 금액(원)</label><input type="number" id="g-silver-price" placeholder="70000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 bg-orange-50 p-2 rounded border border-orange-200">
+                                        <div><label class="text-xs font-bold text-orange-800">Bronze 최소 인원</label><input type="number" id="g-bronze-min" placeholder="10" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-xs font-bold text-orange-800">단위당 금액(원)</label><input type="number" id="g-bronze-price" placeholder="60000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    </div>
+                                </div>
+                            </div>
                             <p class="text-xs text-gray-500">※ 생성 완료 시 접속용 아이디와 임시 비밀번호가 자동 발급됩니다.</p>
                         </div>
                         <div class="mt-6 flex justify-end space-x-3">
@@ -840,6 +861,27 @@ const app = {
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">새 비밀번호</label>
                                 <input type="text" id="edit-g-pw-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            
+                            <!-- Custom Tier Settings (Optional) -->
+                            <div class="mt-4 border-t pt-4">
+                                <h4 class="text-sm font-bold text-gray-800 mb-2">등급별 정산 기준 변경</h4>
+                                <p class="text-xs text-gray-500 mb-3">비워둘 경우 시스템 기본 설정이 유지됩니다.</p>
+                                
+                                <div class="space-y-3">
+                                    <div class="grid grid-cols-2 gap-2 bg-yellow-50 p-2 rounded border border-yellow-200">
+                                        <div><label class="text-xs font-bold text-yellow-800">Gold 최소 인원</label><input type="number" id="edit-g-gold-min" placeholder="20" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-xs font-bold text-yellow-800">단위당 금액(원)</label><input type="number" id="edit-g-gold-price" placeholder="80000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 bg-gray-100 p-2 rounded border border-gray-300">
+                                        <div><label class="text-xs font-bold text-gray-700">Silver 최소 인원</label><input type="number" id="edit-g-silver-min" placeholder="15" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-xs font-bold text-gray-700">단위당 금액(원)</label><input type="number" id="edit-g-silver-price" placeholder="70000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 bg-orange-50 p-2 rounded border border-orange-200">
+                                        <div><label class="text-xs font-bold text-orange-800">Bronze 최소 인원</label><input type="number" id="edit-g-bronze-min" placeholder="10" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-xs font-bold text-orange-800">단위당 금액(원)</label><input type="number" id="edit-g-bronze-price" placeholder="60000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="mt-6 flex justify-end space-x-3">
@@ -1213,10 +1255,21 @@ const app = {
         }
     },
 
-    promptEditAccount(guildId, currentUsername, currentPassword) {
+    promptEditAccount(guildId, currentUsername, currentPassword, currentBankName, currentAccountNumber, customTiersJson = '{}') {
         document.getElementById('edit-g-id').value = guildId;
         document.getElementById('edit-g-id-input').value = currentUsername;
         document.getElementById('edit-g-pw-input').value = currentPassword;
+        
+        let tiers = {};
+        try { tiers = JSON.parse(decodeURIComponent(customTiersJson)) || {}; } catch(e) {}
+        
+        document.getElementById('edit-g-gold-min').value = tiers.Gold?.minMembers || '';
+        document.getElementById('edit-g-gold-price').value = tiers.Gold?.pricePer1000 || '';
+        document.getElementById('edit-g-silver-min').value = tiers.Silver?.minMembers || '';
+        document.getElementById('edit-g-silver-price').value = tiers.Silver?.pricePer1000 || '';
+        document.getElementById('edit-g-bronze-min').value = tiers.Bronze?.minMembers || '';
+        document.getElementById('edit-g-bronze-price').value = tiers.Bronze?.pricePer1000 || '';
+
         document.getElementById('admin-edit-modal').classList.remove('hidden');
     },
 
@@ -1231,10 +1284,25 @@ const app = {
             return;
         }
 
-        db.updateGuild(guildId, newId, newPw);
+        const customTiers = {
+            Gold: { 
+                minMembers: parseInt(document.getElementById('edit-g-gold-min').value) || 20, 
+                pricePer1000: parseInt(document.getElementById('edit-g-gold-price').value) || 80000 
+            },
+            Silver: { 
+                minMembers: parseInt(document.getElementById('edit-g-silver-min').value) || 15, 
+                pricePer1000: parseInt(document.getElementById('edit-g-silver-price').value) || 70000 
+            },
+            Bronze: { 
+                minMembers: parseInt(document.getElementById('edit-g-bronze-min').value) || 10, 
+                pricePer1000: parseInt(document.getElementById('edit-g-bronze-price').value) || 60000 
+            }
+        };
+
+        db.updateGuild(guildId, newId, newPw, '', '', customTiers);
         document.getElementById('admin-edit-modal').classList.add('hidden');
         this.renderAdmin(document.getElementById('app-content'));
-        alert('계정 정보가 성공적으로 변경되었습니다.');
+        alert('계정 및 등급 정보가 성공적으로 변경되었습니다.');
     },
 
     addGuild(e) {
@@ -1242,7 +1310,22 @@ const app = {
         const name = document.getElementById('g-name').value;
         const gmName = document.getElementById('g-gmname').value;
         
-        db.createGuild(name, gmName);
+        const customTiers = {
+            Gold: { 
+                minMembers: parseInt(document.getElementById('g-gold-min').value) || 20, 
+                pricePer1000: parseInt(document.getElementById('g-gold-price').value) || 80000 
+            },
+            Silver: { 
+                minMembers: parseInt(document.getElementById('g-silver-min').value) || 15, 
+                pricePer1000: parseInt(document.getElementById('g-silver-price').value) || 70000 
+            },
+            Bronze: { 
+                minMembers: parseInt(document.getElementById('g-bronze-min').value) || 10, 
+                pricePer1000: parseInt(document.getElementById('g-bronze-price').value) || 60000 
+            }
+        };
+
+        db.createGuild(name, gmName, '', '', customTiers);
         document.getElementById('admin-add-modal').classList.add('hidden');
         this.renderAdmin(document.getElementById('app-content'));
     },

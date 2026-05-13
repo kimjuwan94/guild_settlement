@@ -17,7 +17,6 @@ const eventApp = {
         const tabs = [
             { id: 'upload',   label: '📤 정산서 업로드' },
             { id: 'riders',   label: '👥 라이더 목록' },
-            { id: 'team_mission', label: '🤝 팀/길드 미션' },
             { id: 'roulette', label: '🎡 룰렛 추첨기' },
             { id: 'ranking',  label: '🏆 랭킹 보드' },
             { id: 'history',  label: '📋 이벤트 내역' },
@@ -33,7 +32,6 @@ const eventApp = {
         let body = '';
         if      (this._tab === 'upload')   body = this._renderUpload();
         else if (this._tab === 'riders')   body = this._renderRiders();
-        else if (this._tab === 'team_mission') body = this._renderTeamMission();
         else if (this._tab === 'roulette') body = this._renderRoulette();
         else if (this._tab === 'ranking')  body = this._renderRanking();
         else                               body = this._renderHistory();
@@ -346,163 +344,6 @@ const eventApp = {
         if (!confirm(`'${name}' 라이더를 탈퇴/복구 처리하시겠습니까?\n탈퇴 시 이벤트 당첨 및 랭킹에서 즉시 제외됩니다.`)) return;
         eventDb.toggleParticipantStatus(riderId, name, region);
         this._refreshRiders();
-    },
-
-    // ── 팀/길드 미션 탭 ─────────────────────────────────────
-    _renderTeamMission() {
-        const teams = eventDb.getTeams();
-        const start = document.getElementById('team-start')?.value || new Date().toISOString().slice(0, 10);
-        const end   = document.getElementById('team-end')?.value || new Date().toISOString().slice(0, 10);
-        
-        // 해당 기간의 모든 정산서에서 콜수 집계
-        const candidates = eventDb.getRouletteCandidates(start, end, '전체', 0, []);
-        const riderDeliveries = {};
-        candidates.forEach(c => { riderDeliveries[c.name] = c.deliveries; riderDeliveries[c.riderId] = c.deliveries; });
-
-        const teamHtml = teams.map(t => {
-            let totalCalls = 0;
-            const memberDetails = t.members.map(m => {
-                const calls = riderDeliveries[m] || 0;
-                totalCalls += calls;
-                return `<span class="inline-block bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-700 mr-1 mb-1">${m} (${calls}콜)</span>`;
-            }).join('');
-            
-            const targetCalls = t.targetCalls || 1000;
-            const rewardPerTarget = t.rewardPerTarget || 100000;
-            
-            const sets = Math.floor(totalCalls / targetCalls);
-            const reward = sets * rewardPerTarget;
-
-            return `
-                <div class="bg-white border rounded-xl p-4 shadow-sm mb-4 relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-                    <div class="flex justify-between items-start mb-3">
-                        <div class="pl-2">
-                            <h4 class="font-bold text-indigo-800 text-lg flex items-center">
-                                <i data-lucide="shield" class="w-5 h-5 mr-1 text-indigo-500"></i> ${t.teamName}
-                                <span class="ml-2 text-sm font-normal text-gray-500">길드장: ${t.leaderName}</span>
-                            </h4>
-                            <p class="text-xs text-gray-400 mt-1">소속 팀원: ${t.members.length}명 <span class="mx-1">|</span> 미션 조건: ${targetCalls}콜 당 ${rewardPerTarget.toLocaleString()}원</p>
-                        </div>
-                        <div class="text-right">
-                            <button onclick="eventApp._deleteTeam('${t.teamId}')" class="text-xs text-red-400 hover:text-red-600 underline">팀 삭제</button>
-                        </div>
-                    </div>
-                    <div class="mb-3 pl-2">${memberDetails}</div>
-                    <div class="bg-indigo-50 rounded-lg p-3 flex justify-between items-center ml-2">
-                        <div class="text-sm">
-                            <span class="text-gray-600">합산 콜 수:</span> <span class="font-bold text-indigo-600 text-lg">${totalCalls.toLocaleString()}콜</span>
-                            <span class="text-xs text-indigo-400 ml-2">(${sets}세트 달성)</span>
-                        </div>
-                        <div class="text-right flex items-center gap-3">
-                            <div class="text-right">
-                                <span class="text-[11px] text-gray-500 block leading-tight">지급액</span>
-                                <span class="font-black text-blue-700 text-lg leading-none">${reward.toLocaleString()}원</span>
-                            </div>
-                            <button onclick="eventApp._confirmTeamReward('${t.teamName}', '${t.leaderName}', ${reward}, ${totalCalls}, '${start} ~ ${end}')" 
-                                ${reward === 0 ? 'disabled' : ''}
-                                class="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-600 transition disabled:opacity-50 shadow-sm">
-                                보상 확정
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        return `
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- 설정 패널 -->
-                <div class="glass-panel rounded-xl p-6 lg:col-span-1 h-fit">
-                    <h3 class="font-bold text-gray-800 mb-4 flex items-center">
-                        <i data-lucide="plus-circle" class="w-5 h-5 mr-1 text-indigo-500"></i> 신규 팀(길드) 등록
-                    </h3>
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-xs font-bold text-gray-600 mb-1">팀 이름</label>
-                            <input type="text" id="new-team-name" placeholder="예: 김해북부 연합" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-gray-600 mb-1">길드장 이름</label>
-                            <input type="text" id="new-team-leader" placeholder="예: 홍길동" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-gray-600 mb-1">팀원 목록 (콤마로 구분)</label>
-                            <textarea id="new-team-members" rows="3" placeholder="예: 라이더1, 라이더2, 홍*동1234" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"></textarea>
-                            <p class="text-xs text-gray-400 mt-1">정산서에 표기되는 이름이나 아이디를 입력하세요.</p>
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">기준 콜수 (단위)</label>
-                                <input type="number" id="new-team-target" value="1000" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none bg-indigo-50 font-bold text-indigo-700">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">단위당 지급액(원)</label>
-                                <input type="number" id="new-team-reward" value="100000" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none bg-indigo-50 font-bold text-indigo-700">
-                            </div>
-                        </div>
-                        <button onclick="eventApp._saveTeam()" class="w-full bg-indigo-500 text-white font-bold py-2 rounded-lg hover:bg-indigo-600 transition shadow">
-                            팀 등록 (조건부 저장)
-                        </button>
-                    </div>
-                </div>
-
-                <!-- 팀 목록 & 미션 달성 현황 -->
-                <div class="lg:col-span-2">
-                    <div class="glass-panel rounded-xl p-6 mb-4 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <span class="text-sm font-bold text-gray-700">실적 조회 기간:</span>
-                            <div class="flex items-center gap-1 border rounded-lg px-2 bg-white">
-                                <input type="date" id="team-start" value="${start}" class="py-1.5 text-sm focus:outline-none bg-transparent">
-                                <span class="text-gray-400">~</span>
-                                <input type="date" id="team-end" value="${end}" class="py-1.5 text-sm focus:outline-none bg-transparent">
-                            </div>
-                            <button onclick="eventApp.render(document.getElementById('app-content'))" class="bg-gray-800 text-white px-4 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-700">조회</button>
-                        </div>
-                    </div>
-                    
-                    ${teams.length === 0 ? '<div class="glass-panel rounded-xl p-10 text-center text-gray-400">등록된 팀이 없습니다.</div>' : teamHtml}
-                </div>
-            </div>
-        `;
-    },
-
-    _saveTeam() {
-        const name = document.getElementById('new-team-name').value.trim();
-        const leader = document.getElementById('new-team-leader').value.trim();
-        const members = document.getElementById('new-team-members').value.trim();
-        const targetCalls = parseInt(document.getElementById('new-team-target').value) || 1000;
-        const rewardPerTarget = parseInt(document.getElementById('new-team-reward').value) || 100000;
-        
-        if (!name || !leader || !members) { alert('팀 이름, 길드장, 팀원을 모두 입력하세요.'); return; }
-        eventDb.saveTeam(null, name, leader, members, targetCalls, rewardPerTarget);
-        this.render(document.getElementById('app-content'));
-    },
-
-    _deleteTeam(teamId) {
-        if (!confirm('이 팀을 삭제하시겠습니까?')) return;
-        eventDb.deleteTeam(teamId);
-        this.render(document.getElementById('app-content'));
-    },
-
-    _confirmTeamReward(teamName, leaderName, rewardAmount, totalCalls, period) {
-        if (!confirm(`'${teamName}'(${leaderName}) 팀의 실적(${totalCalls}콜, 지급액 ${rewardAmount.toLocaleString()}원)을 보상 확정 처리하시겠습니까?`)) return;
-        
-        const event = eventDb.createEvent({
-            weekLabel: period, region: '길드전체', rewardAmount: rewardAmount, rewardLabel: '팀/길드 미션 달성',
-            title: `${period} 팀 달성 미션 - ${teamName}`, type: 'team'
-        });
-
-        eventDb.addWinner(event.eventId, {
-            riderId: leaderName, name: `${teamName} (대표 ${leaderName})`,
-            rank: 1, deliveries: totalCalls,
-            rewardAmount: rewardAmount, rewardLabel: '팀/길드 미션 지급'
-        });
-
-        eventDb.confirmRewards(event.eventId);
-        alert(`✅ 보상 확정 완료!\n이벤트 내역에 저장되었습니다.`);
-        this._tab = 'history';
-        this.render(document.getElementById('app-content'));
     },
 
     // ── 룰렛 탭 ─────────────────────────────────────────────

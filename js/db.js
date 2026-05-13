@@ -173,7 +173,7 @@ const db = {
         return this.getGuilds().find(g => g.id === guildId);
     },
 
-    createGuild(name, gmName, bankName = '', accountNumber = '') {
+    createGuild(name, gmName, bankName = '', accountNumber = '', customTiers = null) {
         const data = this.getData();
         const count = data.guilds.length + 1;
         const generatedId = 'G' + String(count).padStart(3, '0');
@@ -189,6 +189,7 @@ const db = {
             password: randomPw,
             bankName,
             accountNumber,
+            customTiers,
             createdAt: new Date().toISOString().split('T')[0]
         };
         data.guilds.push(newGuild);
@@ -207,7 +208,7 @@ const db = {
         return newGuild;
     },
 
-    updateGuild(guildId, newUsername, newPassword, bankName = '', accountNumber = '') {
+    updateGuild(guildId, newUsername, newPassword, bankName = '', accountNumber = '', customTiers = null) {
         const data = this.getData();
         const guild = data.guilds.find(g => g.id === guildId);
         if (guild) {
@@ -215,6 +216,8 @@ const db = {
             if(newPassword) guild.password = newPassword;
             guild.bankName = bankName;
             guild.accountNumber = accountNumber;
+            if(customTiers !== undefined) guild.customTiers = customTiers;
+            
             this.saveData(data);
             return true;
         }
@@ -468,7 +471,7 @@ const db = {
             const isGmInList = approvedMembers.some(m => m.name.replace(/\s/g,'') === guild.gmName.replace(/\s/g,''));
             const activeCount = approvedMembers.length + (isGmInList ? 0 : 1);
             
-            const result = settlementEngine.calculateSettlement(activeCount, totalDeliveries);
+            const result = settlementEngine.calculateSettlement(activeCount, totalDeliveries, guild.customTiers);
             
             const record = {
                 id: 'S' + Date.now() + Math.floor(Math.random()*1000),
@@ -525,11 +528,26 @@ const db = {
         return false;
     },
 
+    getEffectiveTier(guildId) {
+        const headcount = this.getHeadcountForGuild(guildId);
+        const deliveries = this.getTotalDeliveriesForGuild(guildId);
+        const guild = this.getGuildById(guildId);
+        // Ensure settlementEngine is in global scope since db.js doesn't import it directly.
+        // If not available, return '-'. (app.js includes settlement_engine.js before db.js usually)
+        if (typeof SettlementEngine !== 'undefined') {
+            const res = SettlementEngine.calculateSettlement(headcount, deliveries, guild?.customTiers);
+            return res.tier;
+        }
+        return 'None';
+    },
+
     // 마감된 정산서에 엑셀 데이터를 소급 합산하는 핵심 함수
     addDataToSettlement(settlementId, memberDeliveriesMap, settlementEngine) {
         const data = this.getData();
         const s = data.settlements.find(x => x.id === settlementId);
         if (!s) return false;
+
+        const guild = this.getGuildById(s.guildId);
 
         if (!s.memberStats) s.memberStats = [];
 
@@ -549,7 +567,7 @@ const db = {
         s.totalDeliveries = s.memberStats.reduce((sum, ms) => sum + ms.deliveries, 0);
         
         // 3. 정산 엔진으로 금액 재산출
-        const result = settlementEngine.calculateSettlement(s.memberCount, s.totalDeliveries);
+        const result = settlementEngine.calculateSettlement(s.memberCount, s.totalDeliveries, guild?.customTiers);
         s.tier = result.tier;
         s.recognizedDeliveries = result.recognizedDeliveries;
         s.chunks = result.chunks;
@@ -557,14 +575,6 @@ const db = {
 
         this.saveData(data);
         return true;
-    },
-
-    getEffectiveTier(guildId) {
-        const count = this.getHeadcountForGuild(guildId);
-        if (count >= 20) return 'Gold';
-        if (count >= 15) return 'Silver';
-        if (count >= 10) return 'Bronze';
-        return 'None';
     },
 
     // --- Tier Upgrade System ---

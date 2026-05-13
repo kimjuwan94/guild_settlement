@@ -21,13 +21,22 @@ const SettlementEngine = {
      * Determine Tier and calculate settlement
      * @param {number} memberCount - Current active members
      * @param {number} totalDeliveries - Total valid deliveries
+     * @param {Object} customTiers - Optional custom tier configs { Gold: {minMembers, pricePer1000}, ... }
      * @returns {Object} Settlement calculation result
      */
-    calculateSettlement(memberCount, totalDeliveries) {
-        let currentTier = this.config.tiers.find(t => t.name === 'None');
+    calculateSettlement(memberCount, totalDeliveries, customTiers = null) {
+        // Merge with custom settings if provided
+        let effectiveTiers = this.config.tiers.map(t => {
+            if (customTiers && customTiers[t.name]) {
+                return { ...t, minMembers: customTiers[t.name].minMembers, pricePer1000: customTiers[t.name].pricePer1000 };
+            }
+            return t;
+        });
+
+        let currentTier = effectiveTiers.find(t => t.name === 'None');
 
         // Find the highest tier that satisfies BOTH conditions
-        for (const tier of this.config.tiers) {
+        for (const tier of effectiveTiers) {
             if (memberCount >= tier.minMembers && totalDeliveries >= tier.minDeliveries) {
                 currentTier = tier;
                 break;
@@ -62,7 +71,7 @@ const SettlementEngine = {
             chunks: chunks,
             pricePer1000: currentTier.pricePer1000,
             totalAmount: amount,
-            message: `등급: ${currentTier.name} | 인정건수: ${chunks * 1000}건 | 총액: ${amount.toLocaleString()}원`
+            message: `등급: ${currentTier.name} | 인정건수: ${chunks * 1000}건 | 총액: ${amount.toLocaleString()}원 (기준단가: ${currentTier.pricePer1000.toLocaleString()}원)`
         };
     }
 };
