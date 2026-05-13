@@ -262,7 +262,14 @@ const eventApp = {
         if (searchQuery) {
             filteredList = filteredList.filter(r => r.name.toLowerCase().includes(searchQuery));
         }
-        filteredList.sort((a,b) => b.amount - a.amount);
+        // 라이더명 가나다순 정렬, 이름이 같으면 소속권역 순 정렬
+        filteredList.sort((a, b) => {
+            if (a.name < b.name) return -1;
+            if (a.name > b.name) return 1;
+            if (a.region < b.region) return -1;
+            if (a.region > b.region) return 1;
+            return 0;
+        });
 
         const rows = filteredList.map(r => {
             const isWithdrawn = r.status === 'withdrawn';
