@@ -14,6 +14,10 @@ const eventDb = {
     _fbSettleUrl:  'https://floche-gm-default-rtdb.firebaseio.com/event_settlements.json',
     _settleKey:    'guild_event_settlements_v1',
 
+    // ── 이벤트 참여자(탈퇴/활동) 저장소 ──
+    _fbParticipantsUrl: 'https://floche-gm-default-rtdb.firebaseio.com/event_participants.json',
+    _participantsKey:   'guild_event_participants_v1',
+
     // ── 내부 헬퍼 ──────────────────────────────────────────
     _getLocal(key)       { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } },
     _saveLocal(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} },
@@ -27,14 +31,17 @@ const eventDb = {
     // ── 초기 로드 (이벤트 + 정산서 동시) ──────────────────
     async load() {
         try {
-            const [r1, r2] = await Promise.all([
+            const [r1, r2, r3] = await Promise.all([
                 fetch(this._firebaseUrl),
-                fetch(this._fbSettleUrl)
+                fetch(this._fbSettleUrl),
+                fetch(this._fbParticipantsUrl)
             ]);
-            const events   = await r1.json();
-            const settles  = await r2.json();
-            this._saveLocal(this._localKey,   Array.isArray(events)  ? events  : []);
-            this._saveLocal(this._settleKey,  Array.isArray(settles) ? settles : []);
+            const events       = await r1.json();
+            const settles      = await r2.json();
+            const participants = await r3.json();
+            this._saveLocal(this._localKey,       Array.isArray(events)       ? events       : []);
+            this._saveLocal(this._settleKey,      Array.isArray(settles)      ? settles      : []);
+            this._saveLocal(this._participantsKey, Array.isArray(participants) ? participants : []);
         } catch (e) {
             console.warn('[eventDb] Firebase load failed, using local:', e.message);
         }
@@ -143,6 +150,29 @@ const eventDb = {
         this._push(this._fbSettleUrl, settles);
     },
 
+    // ── 참여자 관리 CRUD ──────────────────────────────────
+    getParticipants() { return this._getLocal(this._participantsKey); },
+    getWithdrawnRiderIds() {
+        return this.getParticipants()
+            .filter(p => p.status === 'withdrawn')
+            .map(p => p.riderId);
+    },
+    toggleParticipantStatus(riderId, name, region) {
+        let list = this.getParticipants();
+        let p = list.find(x => x.riderId === riderId);
+        if (!p) {
+            p = { riderId, name, region, status: 'withdrawn' }; // 새로 등록 시 바로 탈퇴로
+            list.push(p);
+        } else {
+            p.status = p.status === 'withdrawn' ? 'active' : 'withdrawn';
+            p.name = name; // 이름/권역 업데이트
+            p.region = region;
+        }
+        this._saveLocal(this._participantsKey, list);
+        this._push(this._fbParticipantsUrl, list);
+        return p.status;
+    },
+
     // ── 룰렛 후보 추출 (이벤트 전용 정산서 기준) ──────────
     getRouletteCandidates(startDate, endDate, region, acceptRateMin, excludeIds) {
         const settles = this.getEventSettlements().filter(b => {
@@ -185,6 +215,12 @@ const eventDb = {
             candidates = candidates.filter(r => r.acceptRate === null || r.acceptRate >= acceptRateMin);
         if (excludeIds && excludeIds.length > 0)
             candidates = candidates.filter(r => !excludeIds.includes(r.riderId));
+            
+        // 탈퇴자 강제 배제 로직
+        const withdrawnIds = this.getWithdrawnRiderIds();
+        if (withdrawnIds.length > 0) {
+            candidates = candidates.filter(r => !withdrawnIds.includes(r.riderId));
+        }
         
         // 랭킹 등 다른 곳에서도 일관되게 표시되도록 deliveries를 amount(총 콜 수)로 일치시킴
         candidates.forEach(c => { c.deliveries = c.amount; });

@@ -16,6 +16,7 @@ const eventApp = {
     render(container) {
         const tabs = [
             { id: 'upload',   label: '📤 정산서 업로드' },
+            { id: 'riders',   label: '👥 라이더 목록' },
             { id: 'roulette', label: '🎡 룰렛 추첨기' },
             { id: 'ranking',  label: '🏆 랭킹 보드' },
             { id: 'history',  label: '📋 이벤트 내역' },
@@ -30,6 +31,7 @@ const eventApp = {
 
         let body = '';
         if      (this._tab === 'upload')   body = this._renderUpload();
+        else if (this._tab === 'riders')   body = this._renderRiders();
         else if (this._tab === 'roulette') body = this._renderRoulette();
         else if (this._tab === 'ranking')  body = this._renderRanking();
         else                               body = this._renderHistory();
@@ -223,6 +225,118 @@ const eventApp = {
                 </h3>
                 ${historyHtml}
             </div>`;
+    },
+
+    // ── 라이더 목록 탭 (탈퇴 관리) ─────────────────────────
+    _renderRiders() {
+        const settles = eventDb.getEventSettlements();
+        const participants = eventDb.getParticipants();
+        
+        const riderMap = {};
+        settles.forEach(b => {
+            const region = b.region || '전체';
+            (b.records || []).forEach(r => {
+                if (!r.riderId && !r.name) return;
+                const key = r.riderId || r.name;
+                if (!riderMap[key]) {
+                    riderMap[key] = { riderId: key, name: r.name, region: region, amount: 0 };
+                }
+                riderMap[key].amount += (r.amount || 0);
+            });
+        });
+        
+        const displayList = Object.values(riderMap).map(r => {
+            const p = participants.find(x => x.riderId === r.riderId);
+            return { ...r, status: p ? p.status : 'active' };
+        });
+        
+        const selectedRegion = document.getElementById('rider-filter-region')?.value || '전체';
+        const regions = ['전체', ...new Set(displayList.map(r => r.region))];
+        
+        let filteredList = displayList;
+        if (selectedRegion !== '전체') {
+            filteredList = filteredList.filter(r => r.region === selectedRegion);
+        }
+        filteredList.sort((a,b) => b.amount - a.amount);
+
+        const rows = filteredList.map(r => {
+            const isWithdrawn = r.status === 'withdrawn';
+            return `
+                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors ${isWithdrawn ? 'bg-red-50 opacity-80' : ''}">
+                    <td class="py-3 px-4 text-sm font-bold ${isWithdrawn ? 'line-through text-red-500' : 'text-gray-800'}">${r.name}</td>
+                    <td class="py-3 px-4 text-sm text-gray-500">${r.region}</td>
+                    <td class="py-3 px-4 text-sm text-center font-bold text-blue-600">${r.amount.toLocaleString()}콜</td>
+                    <td class="py-3 px-4 text-sm text-center">
+                        <span class="px-2 py-1 text-xs font-bold rounded-full ${isWithdrawn ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">
+                            ${isWithdrawn ? '탈퇴 (제외)' : '활동중'}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4 text-right">
+                        <button onclick="eventApp._toggleRiderStatus('${r.riderId}', '${r.name}', '${r.region}')" 
+                            class="px-3 py-1 text-xs font-bold rounded border ${isWithdrawn ? 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'} transition-colors">
+                            ${isWithdrawn ? '복구하기' : '탈퇴처리'}
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="glass-panel rounded-xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-black text-gray-800 flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                        이벤트 참여 라이더 목록
+                    </h3>
+                    <div class="flex items-center gap-2">
+                        <select id="rider-filter-region" onchange="eventApp._refreshRiders()" class="border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none">
+                            ${regions.map(reg => `<option value="${reg}" ${reg === selectedRegion ? 'selected' : ''}>${reg}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="bg-blue-50 text-blue-800 text-xs p-3 rounded-lg mb-4 flex items-start">
+                    <svg class="w-4 h-4 mr-1.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <div>
+                        업로드된 정산서에서 자동 추출된 전체 라이더 목록입니다. <br>
+                        <b>탈퇴처리</b> 버튼을 누르면 해당 라이더는 즉시 <b>룰렛 추첨 및 랭킹보드 집계에서 영구 제외</b>됩니다.
+                    </div>
+                </div>
+
+                <div class="overflow-hidden border border-gray-200 rounded-lg">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                            <tr>
+                                <th class="py-3 px-4">라이더명</th>
+                                <th class="py-3 px-4">소속 권역</th>
+                                <th class="py-3 px-4 text-center">누적 수행 콜 수</th>
+                                <th class="py-3 px-4 text-center">현재 상태</th>
+                                <th class="py-3 px-4 text-right">제외 관리</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows || `<tr><td colspan="5" class="py-8 text-center text-gray-400">데이터가 없습니다.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    },
+
+    _refreshRiders() {
+        if (this._tab === 'riders') {
+            const body = document.getElementById('event-body');
+            if (body) {
+                body.innerHTML = this._renderRiders();
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+        }
+    },
+
+    _toggleRiderStatus(riderId, name, region) {
+        if (!confirm(\`'\${name}' 라이더를 탈퇴/복구 처리하시겠습니까?\\n탈퇴 시 이벤트 당첨 및 랭킹에서 즉시 제외됩니다.\`)) return;
+        eventDb.toggleParticipantStatus(riderId, name, region);
+        this._refreshRiders();
     },
 
     // ── 룰렛 탭 ─────────────────────────────────────────────
