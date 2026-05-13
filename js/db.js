@@ -173,7 +173,7 @@ const db = {
         return this.getGuilds().find(g => g.id === guildId);
     },
 
-    createGuild(name, gmName, bankName = '', accountNumber = '', customTiers = null) {
+    createGuild(name, gmName, bankName = '', accountNumber = '', customTiers = null, customRule = null, customIncentives = null) {
         const data = this.getData();
         const count = data.guilds.length + 1;
         const generatedId = 'G' + String(count).padStart(3, '0');
@@ -190,6 +190,8 @@ const db = {
             bankName,
             accountNumber,
             customTiers,
+            customRule,
+            customIncentives,
             createdAt: new Date().toISOString().split('T')[0]
         };
         data.guilds.push(newGuild);
@@ -208,15 +210,19 @@ const db = {
         return newGuild;
     },
 
-    updateGuild(guildId, newUsername, newPassword, bankName = '', accountNumber = '', customTiers = null) {
+    updateGuild(guildId, newUsername, newPassword, bankName = '', accountNumber = '', customTiers = null, newName = null, newGmName = null, customRule = null, customIncentives = null) {
         const data = this.getData();
         const guild = data.guilds.find(g => g.id === guildId);
         if (guild) {
             guild.username = newUsername;
             if(newPassword) guild.password = newPassword;
+            if(newName) guild.name = newName;
+            if(newGmName) guild.gmName = newGmName;
             guild.bankName = bankName;
             guild.accountNumber = accountNumber;
             if(customTiers !== undefined) guild.customTiers = customTiers;
+            if(customRule !== undefined) guild.customRule = customRule;
+            if(customIncentives !== undefined) guild.customIncentives = customIncentives;
             
             this.saveData(data);
             return true;
@@ -360,15 +366,7 @@ const db = {
 
     getHeadcountForGuild(guildId) {
         // 인원수는 'approved' 상태인 멤버만 집계
-        const members = this.getMembers(guildId).filter(m => m.status === 'approved');
-        const guild = this.getGuildById(guildId);
-        if (!guild) return members.length;
-        
-        // 길드장이 승인된 멤버 리스트에 이미 등록되어 있는지 확인 (공백 무시)
-        const isGmInList = members.some(m => m.name.replace(/\s/g,'') === guild.gmName.replace(/\s/g,''));
-        
-        // 멤버 수 + (길드장이 등록 안되어 있으면 1명 추가)
-        return members.length + (isGmInList ? 0 : 1);
+        return this.getMembers(guildId).filter(m => m.status === 'approved').length;
     },
 
     // --- Auto Finalize Date Logic ---
@@ -457,6 +455,52 @@ const db = {
         return currentWeekName;
     },
 
+    forceResetGuildWeekly(guildId, settlementEngine) {
+        const data = this.getData();
+        const currentWeekName = this.getCurrentWeekName();
+        if (!currentWeekName) return false;
+
+        const guild = data.guilds.find(g => g.id === guildId);
+        if (!guild) return false;
+
+        // 1. 해당 길드의 실적 계산
+        const guildMembers = this.getMembers(guild.id);
+        const approvedMembers = guildMembers.filter(m => m.status === 'approved');
+        const totalDeliveries = approvedMembers.reduce((sum, m) => sum + (m.deliveries || 0), 0);
+        
+        const isGmInList = approvedMembers.some(m => m.name.replace(/\s/g,'') === guild.gmName.replace(/\s/g,''));
+        const activeCount = approvedMembers.length + (isGmInList ? 0 : 1);
+        
+        const result = settlementEngine.calculateSettlement(activeCount, totalDeliveries, guild.customTiers, guild.customRule);
+        
+        const record = {
+            id: 'S' + Date.now() + Math.floor(Math.random()*1000),
+            weekName: currentWeekName + " (개별수동마감)",
+            guildId: guild.id,
+            date: new Date().toISOString().split('T')[0],
+            memberCount: activeCount,
+            totalDeliveries: totalDeliveries,
+            tier: result.tier,
+            recognizedDeliveries: result.recognizedDeliveries,
+            chunks: result.chunks,
+            totalAmount: result.totalAmount,
+            isPaid: false,
+            memberStats: approvedMembers.map(m => ({ id: m.id, name: m.name, deliveries: m.deliveries || 0 }))
+        };
+        
+        data.settlements.push(record);
+
+        // 2. 해당 길드원들만 deliveries = 0 으로 리셋
+        data.members.forEach(member => {
+            if (member.guildId === guild.id) {
+                member.deliveries = 0;
+            }
+        });
+
+        this.saveData(data);
+        return currentWeekName;
+    },
+
     // Internal finalization logic
     _runFinalization(data, weekName, settlementEngine) {
         // Calculate settlement for each guild and save to history
@@ -467,11 +511,9 @@ const db = {
             const approvedMembers = guildMembers.filter(m => m.status === 'approved');
             
             const totalDeliveries = approvedMembers.reduce((sum, m) => sum + (m.deliveries || 0), 0);
+            const activeCount = approvedMembers.length;
             
-            const isGmInList = approvedMembers.some(m => m.name.replace(/\s/g,'') === guild.gmName.replace(/\s/g,''));
-            const activeCount = approvedMembers.length + (isGmInList ? 0 : 1);
-            
-            const result = settlementEngine.calculateSettlement(activeCount, totalDeliveries, guild.customTiers);
+            const result = settlementEngine.calculateSettlement(activeCount, totalDeliveries, guild.customTiers, guild.customRule);
             
             const record = {
                 id: 'S' + Date.now() + Math.floor(Math.random()*1000),
@@ -535,10 +577,68 @@ const db = {
         // Ensure settlementEngine is in global scope since db.js doesn't import it directly.
         // If not available, return '-'. (app.js includes settlement_engine.js before db.js usually)
         if (typeof SettlementEngine !== 'undefined') {
-            const res = SettlementEngine.calculateSettlement(headcount, deliveries, guild?.customTiers);
+            const res = SettlementEngine.calculateSettlement(headcount, deliveries, guild?.customTiers, guild?.customRule);
             return res.tier;
         }
         return 'None';
+    },
+
+    // --- Monthly Incentive Methods ---
+    getMonthlyIncentiveData(guildId) {
+        const data = this.getData();
+        const guild = data.guilds.find(g => g.id === guildId);
+        if (!guild || !guild.customIncentives || guild.customIncentives.length === 0) return null;
+
+        const now = new Date();
+        const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+
+        let monthlyTotal = 0;
+        const gmNames = guild.gmName.split(',').map(n => n.replace(/\s/g,'')).filter(n => n);
+
+        // 1. 과거 정산된 이번 달 내역 합산 (팀장 실적 제외)
+        const settlements = data.settlements.filter(s => s.guildId === guildId && s.date.startsWith(currentMonth));
+        settlements.forEach(s => {
+            if (s.memberStats && s.memberStats.length > 0) {
+                s.memberStats.forEach(m => {
+                    if (!gmNames.includes(m.name.replace(/\s/g, ''))) {
+                        monthlyTotal += (m.deliveries || 0);
+                    }
+                });
+            } else {
+                // memberStats가 없는 경우의 폴백
+                monthlyTotal += s.totalDeliveries;
+            }
+        });
+
+        // 2. 현재 주차(진행중) 실적 및 등록 인원 합산 (팀장 제외)
+        const currentMembers = this.getMembers(guildId).filter(m => m.status === 'approved');
+        const teamMembersOnly = currentMembers.filter(m => !gmNames.includes(m.name.replace(/\s/g, '')));
+        
+        teamMembersOnly.forEach(m => {
+            monthlyTotal += (m.deliveries || 0);
+        });
+
+        const activeCount = teamMembersOnly.length > 0 ? teamMembersOnly.length : 1; // 0 나누기 방지
+        const monthlyAverage = Math.floor(monthlyTotal / activeCount);
+
+        let matchedInc = null;
+        for (const inc of guild.customIncentives) {
+            if (monthlyAverage >= inc.min && monthlyAverage < inc.max) {
+                matchedInc = inc;
+                break;
+            }
+        }
+
+        const expectedTotal = matchedInc ? matchedInc.amount * teamMembersOnly.length : 0;
+
+        return {
+            month: currentMonth,
+            monthlyTotal,
+            activeCount,
+            monthlyAverage,
+            expectedAmountPerPerson: matchedInc ? matchedInc.amount : 0,
+            expectedTotal
+        };
     },
 
     // 마감된 정산서에 엑셀 데이터를 소급 합산하는 핵심 함수
@@ -567,7 +667,7 @@ const db = {
         s.totalDeliveries = s.memberStats.reduce((sum, ms) => sum + ms.deliveries, 0);
         
         // 3. 정산 엔진으로 금액 재산출
-        const result = settlementEngine.calculateSettlement(s.memberCount, s.totalDeliveries, guild?.customTiers);
+        const result = settlementEngine.calculateSettlement(s.memberCount, s.totalDeliveries, guild?.customTiers, guild?.customRule);
         s.tier = result.tier;
         s.recognizedDeliveries = result.recognizedDeliveries;
         s.chunks = result.chunks;

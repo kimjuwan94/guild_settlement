@@ -200,10 +200,11 @@ const app = {
         if (this.state.currentUser.role === 'admin') return;
 
         const guildId = this.state.currentUser.id;
+        const guild = db.getGuildById(guildId);
         const activeCount = db.getHeadcountForGuild(guildId);
         const totalDeliveries = db.getTotalDeliveriesForGuild(guildId);
         
-        const result = SettlementEngine.calculateSettlement(activeCount, totalDeliveries);
+        const result = SettlementEngine.calculateSettlement(activeCount, totalDeliveries, guild?.customTiers, guild?.customRule);
 
         const globalNotice = db.getNotice();
         const noticeHtml = globalNotice ? `
@@ -242,7 +243,13 @@ const app = {
 
         container.innerHTML = `
             ${noticeHtml}
-            <div id="upgrade-area" class="mb-6"></div>
+            <div class="flex justify-between items-center mb-6">
+                <div id="upgrade-area"></div>
+                <button onclick="app.resetGuild('${guildId}')" class="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4 mr-2"></i> 개별 수동 마감 (초기화)
+                </button>
+            </div>
+            
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-8">
                 <div class="glass-panel p-5 md:p-6 rounded-xl border border-gray-100">
                     <div class="flex items-center text-gray-500 mb-2">
@@ -260,15 +267,49 @@ const app = {
                     <div class="text-2xl md:text-3xl font-black text-gray-900">${totalDeliveries.toLocaleString()}<span class="text-sm font-normal text-gray-500 ml-1">건</span></div>
                 </div>
 
-                <div class="glass-panel p-5 md:p-6 rounded-xl border border-gray-100 bg-gradient-to-br from-primary-50 to-white">
-                    <div class="flex items-center text-primary-700 mb-2">
-                        <i data-lucide="award" class="w-4 h-4 md:w-5 md:h-5 mr-2"></i>
-                        <span class="font-bold text-xs md:text-sm">현재 공식 등급</span>
+                <div class="glass-panel p-5 md:p-6 rounded-xl border border-gray-100">
+                    <div class="flex items-center text-gray-500 mb-2">
+                        <i data-lucide="calculator" class="w-4 h-4 md:w-5 md:h-5 mr-2 text-purple-500"></i>
+                        <span class="font-bold text-xs md:text-sm">주간 예상 정산금액</span>
                     </div>
-                    <div class="text-2xl md:text-3xl font-black text-primary-700">${db.getEffectiveTier(guildId)}</div>
+                    <div class="text-2xl md:text-3xl font-black text-gray-900">${result.totalAmount.toLocaleString()}<span class="text-sm font-normal text-gray-500 ml-1">원</span></div>
+                    <div class="text-xs text-gray-500 mt-2 font-medium bg-gray-50 p-2 rounded">${result.message}</div>
                 </div>
-            </div>
+            </div>`;
 
+        // Monthly Incentive Display
+        const incData = db.getMonthlyIncentiveData(guildId);
+        if (incData) {
+            const currentMonthStr = incData.month.split('-')[1] + '월';
+            container.innerHTML += `
+            <div class="glass-panel rounded-xl border border-emerald-100 p-5 md:p-6 mb-8 relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
+                <h3 class="text-lg font-bold text-emerald-800 mb-4 flex items-center">
+                    <i data-lucide="target" class="w-5 h-5 mr-2 text-emerald-500"></i> ${currentMonthStr} 월간 팀장 인센티브 예상 현황
+                </h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-white p-3 rounded-lg border border-emerald-50">
+                        <p class="text-xs font-bold text-gray-500 mb-1">월간 누적 총 콜수</p>
+                        <p class="text-lg font-black text-gray-800">${incData.monthlyTotal.toLocaleString()}건</p>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border border-emerald-50">
+                        <p class="text-xs font-bold text-gray-500 mb-1">등록 인원수</p>
+                        <p class="text-lg font-black text-gray-800">${incData.activeCount}명</p>
+                    </div>
+                    <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+                        <p class="text-xs font-bold text-emerald-800 mb-1">인원당 월평균 콜수</p>
+                        <p class="text-xl font-black text-emerald-600">${incData.monthlyAverage.toLocaleString()}건</p>
+                    </div>
+                    <div class="bg-emerald-500 p-3 rounded-lg shadow text-white flex flex-col justify-center">
+                        <p class="text-xs font-bold text-emerald-100 mb-1">예상 인센티브(총액)</p>
+                        <p class="text-xl font-black">${incData.expectedTotal.toLocaleString()}원</p>
+                        <p class="text-[10px] text-emerald-200 mt-1">인당 ${incData.expectedAmountPerPerson.toLocaleString()}원 적용</p>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        container.innerHTML += `
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                 <div class="lg:col-span-2 glass-panel rounded-xl border border-gray-100 p-6 shadow-sm flex flex-col h-full">
                     <h3 class="text-lg font-semibold mb-4 text-gray-800 border-b pb-2 flex items-center">
@@ -721,9 +762,14 @@ const app = {
                                 <div class="font-mono text-xs bg-gray-100 px-2 py-1 rounded inline-block">ID: ${g.username}</div>
                                 <div class="font-mono text-xs bg-red-50 text-red-600 px-2 py-1 rounded inline-block mt-1">PW: ${g.password}</div>
                             </div>
-                            <button onclick="app.promptEditAccount('${g.id}', '${g.username}', '${g.password}', '${g.bankName || ''}', '${g.accountNumber || ''}', '${encodeURIComponent(JSON.stringify(g.customTiers || {}))}')" class="text-gray-400 hover:text-blue-600 transition-colors" title="계정 및 계좌/등급 정보 수정">
-                                <i data-lucide="pencil" class="w-4 h-4"></i>
-                            </button>
+                            <div class="flex items-center space-x-2">
+                                <button onclick="app.resetGuild('${g.id}')" class="text-gray-400 hover:text-red-500 transition-colors" title="이 길드만 수동 마감(초기화)">
+                                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="app.promptEditAccount('${g.id}', '${g.name}', '${g.gmName}', '${g.username}', '${g.password}', '${g.bankName || ''}', '${g.accountNumber || ''}', '${encodeURIComponent(JSON.stringify(g.customTiers || {}))}', '${encodeURIComponent(JSON.stringify(g.customRule || {}))}', '${encodeURIComponent(JSON.stringify(g.customIncentives || []))}')" class="text-gray-400 hover:text-blue-600 transition-colors" title="길드 정보 수정">
+                                    <i data-lucide="pencil" class="w-4 h-4"></i>
+                                </button>
+                            </div>
                         </div>
                     </td>
                     <td class="py-3 px-4 text-sm text-gray-700 text-center">${activeCount}명</td>
@@ -803,93 +849,194 @@ const app = {
             </div>
 
             <!-- Admin Guild Creation Modal -->
-            <div id="admin-add-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
-                <div class="glass-panel w-full max-w-md p-6 rounded-xl shadow-xl">
-                    <h3 class="text-lg font-semibold mb-4 border-b pb-2">신규 길드 및 접속 계정 생성</h3>
-                    <form id="add-guild-form" onsubmit="app.addGuild(event)">
-                        <div class="space-y-4">
+            <div id="admin-add-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div class="glass-panel w-full max-w-md rounded-xl shadow-xl max-h-[90vh] flex flex-col">
+                    <div class="p-6 pb-4 border-b">
+                        <h3 class="text-lg font-semibold text-gray-800">신규 길드 및 접속 계정 생성</h3>
+                    </div>
+                    <div class="p-6 pt-4 flex-1 overflow-y-auto">
+                        <form id="add-guild-form" onsubmit="app.addGuild(event)">
+                            <div class="space-y-4 pr-2">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">길드명</label>
                                 <input type="text" id="g-name" required placeholder="예: 구로가산 길드" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">길드장(GM) 이름</label>
-                                <input type="text" id="g-gmname" required placeholder="예: 김길동" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
+                                <div class="flex space-x-2">
+                                    <input type="text" id="g-gmname" required placeholder="예: 김길동 (여러 명일 경우 콤마로 구분)" class="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
+                                    <button type="button" onclick="app.appendGmName('g-gmname')" class="px-3 py-2 bg-gray-100 text-gray-700 font-bold border border-gray-300 rounded-md hover:bg-gray-200" title="공동 길드장 추가">
+                                        <i data-lucide="user-plus" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
                             </div>
                             
+                            <!-- Custom Single Rule Setting (Optional) -->
+                            <div class="mt-4 border-t pt-4">
+                                <h4 class="text-sm font-bold text-blue-800 mb-2">단일 단가제 설정 (팀장 전용 조건부)</h4>
+                                <p class="text-xs text-gray-500 mb-3">설정 시 위의 '등급별 정산 기준'과 '인원 제한/최대건수'를 모두 무시하고, 단순히 <strong class="text-blue-700">인원수 상관없이 [기준 콜수]당 [금액]</strong>을 무한대로 지급합니다.</p>
+                                <div class="grid grid-cols-2 gap-2 bg-blue-50 p-2 rounded border border-blue-200">
+                                    <div><label class="text-xs font-bold text-blue-800">기준 콜수(건)</label><input type="number" id="g-custom-calls" placeholder="예: 1000" class="w-full px-2 py-1 text-sm border rounded bg-white"></div>
+                                    <div><label class="text-xs font-bold text-blue-800">단위당 금액(원)</label><input type="number" id="g-custom-price" placeholder="예: 100000" class="w-full px-2 py-1 text-sm border rounded bg-white"></div>
+                                </div>
+                            </div>
+
+                            <!-- Monthly Incentive Setting -->
+                            <div class="mt-4 border-t pt-4">
+                                <h4 class="text-sm font-bold text-emerald-700 mb-2">팀장 월간 인센티브 (인원당 월평균 콜수 기준)</h4>
+                                <p class="text-xs text-gray-500 mb-3">등록된 인원의 한 달(이번 달) 누적 총 콜수를 인원수로 나눈 '월 평균 콜수' 구간에 따라 지급됩니다.</p>
+                                <div class="space-y-2 bg-emerald-50 p-3 rounded border border-emerald-200">
+                                    <div class="grid grid-cols-3 gap-2 items-end">
+                                        <div><label class="text-[10px] font-bold text-emerald-800">최소(이상)</label><input type="number" id="g-inc-min-1" placeholder="15" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-emerald-800">최대(미만)</label><input type="number" id="g-inc-max-1" placeholder="25" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-emerald-800">지급액(원)</label><input type="number" id="g-inc-amt-1" placeholder="30000" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2 items-end">
+                                        <div><input type="number" id="g-inc-min-2" placeholder="25" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><input type="number" id="g-inc-max-2" placeholder="35" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><input type="number" id="g-inc-amt-2" placeholder="50000" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2 items-end">
+                                        <div><input type="number" id="g-inc-min-3" placeholder="35" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><input type="number" id="g-inc-max-3" placeholder="" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><input type="number" id="g-inc-amt-3" placeholder="70000" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Custom Tier Settings (Optional) -->
                             <div class="mt-4 border-t pt-4">
                                 <h4 class="text-sm font-bold text-gray-800 mb-2">등급별 정산 기준 설정 (선택)</h4>
                                 <p class="text-xs text-gray-500 mb-3">비워둘 경우 기본 시스템 설정이 적용됩니다. (기본- Gold: 20명/8만, Silver: 15명/7만, Bronze: 10명/6만)</p>
                                 
                                 <div class="space-y-3">
-                                    <div class="grid grid-cols-2 gap-2 bg-yellow-50 p-2 rounded border border-yellow-200">
-                                        <div><label class="text-xs font-bold text-yellow-800">Gold 최소 인원</label><input type="number" id="g-gold-min" placeholder="20" class="w-full px-2 py-1 text-sm border rounded"></div>
-                                        <div><label class="text-xs font-bold text-yellow-800">단위당 금액(원)</label><input type="number" id="g-gold-price" placeholder="80000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    <div class="grid grid-cols-3 gap-2 bg-yellow-50 p-2 rounded border border-yellow-200">
+                                        <div><label class="text-[10px] font-bold text-yellow-800">Gold 최소인원</label><input type="number" id="g-gold-min" placeholder="20" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-yellow-800">기준 콜수(건)</label><input type="number" id="g-gold-block" placeholder="1000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-yellow-800">단위당 금액(원)</label><input type="number" id="g-gold-price" placeholder="80000" class="w-full px-2 py-1 text-sm border rounded"></div>
                                     </div>
-                                    <div class="grid grid-cols-2 gap-2 bg-gray-100 p-2 rounded border border-gray-300">
-                                        <div><label class="text-xs font-bold text-gray-700">Silver 최소 인원</label><input type="number" id="g-silver-min" placeholder="15" class="w-full px-2 py-1 text-sm border rounded"></div>
-                                        <div><label class="text-xs font-bold text-gray-700">단위당 금액(원)</label><input type="number" id="g-silver-price" placeholder="70000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    <div class="grid grid-cols-3 gap-2 bg-gray-100 p-2 rounded border border-gray-300">
+                                        <div><label class="text-[10px] font-bold text-gray-700">Silver 최소인원</label><input type="number" id="g-silver-min" placeholder="15" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-gray-700">기준 콜수(건)</label><input type="number" id="g-silver-block" placeholder="1000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-gray-700">단위당 금액(원)</label><input type="number" id="g-silver-price" placeholder="70000" class="w-full px-2 py-1 text-sm border rounded"></div>
                                     </div>
-                                    <div class="grid grid-cols-2 gap-2 bg-orange-50 p-2 rounded border border-orange-200">
-                                        <div><label class="text-xs font-bold text-orange-800">Bronze 최소 인원</label><input type="number" id="g-bronze-min" placeholder="10" class="w-full px-2 py-1 text-sm border rounded"></div>
-                                        <div><label class="text-xs font-bold text-orange-800">단위당 금액(원)</label><input type="number" id="g-bronze-price" placeholder="60000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    <div class="grid grid-cols-3 gap-2 bg-orange-50 p-2 rounded border border-orange-200">
+                                        <div><label class="text-[10px] font-bold text-orange-800">Bronze 최소인원</label><input type="number" id="g-bronze-min" placeholder="10" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-orange-800">기준 콜수(건)</label><input type="number" id="g-bronze-block" placeholder="1000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-orange-800">단위당 금액(원)</label><input type="number" id="g-bronze-price" placeholder="60000" class="w-full px-2 py-1 text-sm border rounded"></div>
                                     </div>
                                 </div>
                             </div>
                             <p class="text-xs text-gray-500">※ 생성 완료 시 접속용 아이디와 임시 비밀번호가 자동 발급됩니다.</p>
-                        </div>
-                        <div class="mt-6 flex justify-end space-x-3">
-                            <button type="button" onclick="document.getElementById('admin-add-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
-                            <button type="submit" class="px-4 py-2 text-sm text-white bg-purple-600 rounded-md hover:bg-purple-700">생성하기</button>
-                        </div>
-                    </form>
+                            </div>
+                            <div class="mt-6 pt-4 border-t flex justify-end space-x-3 sticky bottom-0 bg-white py-2 z-10">
+                                <button type="button" onclick="document.getElementById('admin-add-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
+                                <button type="submit" class="px-4 py-2 text-sm text-white bg-purple-600 rounded-md hover:bg-purple-700">생성하기</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
 
             <!-- Admin Account Edit Modal -->
-            <div id="admin-edit-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
-                <div class="glass-panel w-full max-w-md p-6 rounded-xl shadow-xl">
-                    <h3 class="text-lg font-semibold mb-4 border-b pb-2 text-blue-800"><i data-lucide="key-round" class="w-5 h-5 inline mr-1"></i>계정 정보 수정</h3>
-                    <form id="edit-account-form" onsubmit="app.updateAccount(event)">
-                        <input type="hidden" id="edit-g-id">
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">접속 아이디 변경</label>
-                                <input type="text" id="edit-g-id-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div id="admin-edit-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div class="glass-panel w-full max-w-md rounded-xl shadow-xl max-h-[90vh] flex flex-col">
+                    <div class="p-6 pb-4 border-b">
+                        <h3 class="text-lg font-semibold text-blue-800"><i data-lucide="pencil" class="w-5 h-5 inline mr-1"></i>길드 정보 수정</h3>
+                    </div>
+                    <div class="p-6 pt-4 flex-1 overflow-y-auto">
+                        <form id="edit-account-form" onsubmit="app.updateAccount(event)">
+                            <input type="hidden" id="edit-g-id">
+                            <div class="space-y-4 pr-2">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">길드명</label>
+                                    <input type="text" id="edit-g-name-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">길드장 이름</label>
+                                    <div class="flex space-x-2">
+                                        <input type="text" id="edit-g-gmname-input" required placeholder="콤마로 구분" class="flex-grow px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        <button type="button" onclick="app.appendGmName('edit-g-gmname-input')" class="px-2 py-2 bg-gray-100 text-gray-700 font-bold border border-gray-300 rounded-md hover:bg-gray-200" title="공동 길드장 추가">
+                                            <i data-lucide="user-plus" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">새 비밀번호</label>
-                                <input type="text" id="edit-g-pw-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">접속 아이디</label>
+                                    <input type="text" id="edit-g-id-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">비밀번호</label>
+                                    <input type="text" id="edit-g-pw-input" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
                             </div>
                             
+                            <!-- Custom Single Rule Setting (Optional) -->
+                            <div class="mt-4 border-t pt-4">
+                                <h4 class="text-sm font-bold text-blue-800 mb-2">단일 단가제 (인원제한 무시)</h4>
+                                <p class="text-xs text-gray-500 mb-3">팀원 인원수 상관없이 콜수로만 단순 비례 지급합니다.</p>
+                                <div class="grid grid-cols-2 gap-2 bg-blue-50 p-2 rounded border border-blue-200">
+                                    <div><label class="text-xs font-bold text-blue-800">기준 콜수(건)</label><input type="number" id="edit-g-custom-calls" placeholder="예: 1000" class="w-full px-2 py-1 text-sm border rounded bg-white"></div>
+                                    <div><label class="text-xs font-bold text-blue-800">단위당 금액(원)</label><input type="number" id="edit-g-custom-price" placeholder="예: 100000" class="w-full px-2 py-1 text-sm border rounded bg-white"></div>
+                                </div>
+                            </div>
+
+                            <!-- Monthly Incentive Setting -->
+                            <div class="mt-4 border-t pt-4">
+                                <h4 class="text-sm font-bold text-emerald-700 mb-2">팀장 월간 인센티브 (인원당 월평균 콜수 기준)</h4>
+                                <p class="text-xs text-gray-500 mb-3">등록된 인원의 한 달 누적 총 콜수를 인원수로 나눈 '월 평균 콜수' 구간에 따라 지급됩니다.</p>
+                                <div class="space-y-2 bg-emerald-50 p-3 rounded border border-emerald-200">
+                                    <div class="grid grid-cols-3 gap-2 items-end">
+                                        <div><label class="text-[10px] font-bold text-emerald-800">최소(이상)</label><input type="number" id="edit-g-inc-min-1" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-emerald-800">최대(미만)</label><input type="number" id="edit-g-inc-max-1" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-emerald-800">지급액(원)</label><input type="number" id="edit-g-inc-amt-1" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2 items-end">
+                                        <div><input type="number" id="edit-g-inc-min-2" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><input type="number" id="edit-g-inc-max-2" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><input type="number" id="edit-g-inc-amt-2" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2 items-end">
+                                        <div><input type="number" id="edit-g-inc-min-3" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><input type="number" id="edit-g-inc-max-3" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                        <div><input type="number" id="edit-g-inc-amt-3" class="w-full px-2 py-1 text-xs border rounded"></div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Custom Tier Settings (Optional) -->
                             <div class="mt-4 border-t pt-4">
                                 <h4 class="text-sm font-bold text-gray-800 mb-2">등급별 정산 기준 변경</h4>
                                 <p class="text-xs text-gray-500 mb-3">비워둘 경우 시스템 기본 설정이 유지됩니다.</p>
                                 
                                 <div class="space-y-3">
-                                    <div class="grid grid-cols-2 gap-2 bg-yellow-50 p-2 rounded border border-yellow-200">
-                                        <div><label class="text-xs font-bold text-yellow-800">Gold 최소 인원</label><input type="number" id="edit-g-gold-min" placeholder="20" class="w-full px-2 py-1 text-sm border rounded"></div>
-                                        <div><label class="text-xs font-bold text-yellow-800">단위당 금액(원)</label><input type="number" id="edit-g-gold-price" placeholder="80000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    <div class="grid grid-cols-3 gap-2 bg-yellow-50 p-2 rounded border border-yellow-200">
+                                        <div><label class="text-[10px] font-bold text-yellow-800">Gold 최소인원</label><input type="number" id="edit-g-gold-min" placeholder="20" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-yellow-800">기준 콜수(건)</label><input type="number" id="edit-g-gold-block" placeholder="1000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-yellow-800">단위당 금액(원)</label><input type="number" id="edit-g-gold-price" placeholder="80000" class="w-full px-2 py-1 text-sm border rounded"></div>
                                     </div>
-                                    <div class="grid grid-cols-2 gap-2 bg-gray-100 p-2 rounded border border-gray-300">
-                                        <div><label class="text-xs font-bold text-gray-700">Silver 최소 인원</label><input type="number" id="edit-g-silver-min" placeholder="15" class="w-full px-2 py-1 text-sm border rounded"></div>
-                                        <div><label class="text-xs font-bold text-gray-700">단위당 금액(원)</label><input type="number" id="edit-g-silver-price" placeholder="70000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    <div class="grid grid-cols-3 gap-2 bg-gray-100 p-2 rounded border border-gray-300">
+                                        <div><label class="text-[10px] font-bold text-gray-700">Silver 최소인원</label><input type="number" id="edit-g-silver-min" placeholder="15" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-gray-700">기준 콜수(건)</label><input type="number" id="edit-g-silver-block" placeholder="1000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-gray-700">단위당 금액(원)</label><input type="number" id="edit-g-silver-price" placeholder="70000" class="w-full px-2 py-1 text-sm border rounded"></div>
                                     </div>
-                                    <div class="grid grid-cols-2 gap-2 bg-orange-50 p-2 rounded border border-orange-200">
-                                        <div><label class="text-xs font-bold text-orange-800">Bronze 최소 인원</label><input type="number" id="edit-g-bronze-min" placeholder="10" class="w-full px-2 py-1 text-sm border rounded"></div>
-                                        <div><label class="text-xs font-bold text-orange-800">단위당 금액(원)</label><input type="number" id="edit-g-bronze-price" placeholder="60000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                    <div class="grid grid-cols-3 gap-2 bg-orange-50 p-2 rounded border border-orange-200">
+                                        <div><label class="text-[10px] font-bold text-orange-800">Bronze 최소인원</label><input type="number" id="edit-g-bronze-min" placeholder="10" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-orange-800">기준 콜수(건)</label><input type="number" id="edit-g-bronze-block" placeholder="1000" class="w-full px-2 py-1 text-sm border rounded"></div>
+                                        <div><label class="text-[10px] font-bold text-orange-800">단위당 금액(원)</label><input type="number" id="edit-g-bronze-price" placeholder="60000" class="w-full px-2 py-1 text-sm border rounded"></div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="mt-6 flex justify-end space-x-3">
-                            <button type="button" onclick="document.getElementById('admin-edit-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
-                            <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700">변경사항 저장</button>
-                        </div>
-                    </form>
-                </div>
+                            </div>
+                            <div class="mt-6 pt-4 border-t flex justify-end space-x-3 sticky bottom-0 bg-white py-2 z-10">
+                                <button type="button" onclick="document.getElementById('admin-edit-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200">취소</button>
+                                <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700">변경사항 저장</button>
+                            </div>
+                        </form>
+                    </div>
             </div>
         `;
         lucide.createIcons();
@@ -1255,54 +1402,111 @@ const app = {
         }
     },
 
-    promptEditAccount(guildId, currentUsername, currentPassword, currentBankName, currentAccountNumber, customTiersJson = '{}') {
+    promptEditAccount(guildId, guildName, gmName, currentUsername, currentPassword, currentBankName, currentAccountNumber, customTiersJson = '{}', customRuleJson = '{}', customIncJson = '[]') {
         document.getElementById('edit-g-id').value = guildId;
+        document.getElementById('edit-g-name-input').value = guildName;
+        document.getElementById('edit-g-gmname-input').value = gmName;
         document.getElementById('edit-g-id-input').value = currentUsername;
         document.getElementById('edit-g-pw-input').value = currentPassword;
         
         let tiers = {};
         try { tiers = JSON.parse(decodeURIComponent(customTiersJson)) || {}; } catch(e) {}
         
+        let rule = {};
+        try { rule = JSON.parse(decodeURIComponent(customRuleJson)) || {}; } catch(e) {}
+
+        let incs = [];
+        try { incs = JSON.parse(decodeURIComponent(customIncJson)) || []; } catch(e) {}
+
+        document.getElementById('edit-g-custom-calls').value = rule.targetCalls || '';
+        document.getElementById('edit-g-custom-price').value = rule.rewardPerTarget || '';
+        
+        for (let i=0; i<3; i++) {
+            document.getElementById(`edit-g-inc-min-${i+1}`).value = incs[i]?.min || '';
+            document.getElementById(`edit-g-inc-max-${i+1}`).value = incs[i]?.max || '';
+            document.getElementById(`edit-g-inc-amt-${i+1}`).value = incs[i]?.amount || '';
+        }
+        
         document.getElementById('edit-g-gold-min').value = tiers.Gold?.minMembers || '';
+        document.getElementById('edit-g-gold-block').value = tiers.Gold?.callsPerBlock || '';
         document.getElementById('edit-g-gold-price').value = tiers.Gold?.pricePer1000 || '';
         document.getElementById('edit-g-silver-min').value = tiers.Silver?.minMembers || '';
+        document.getElementById('edit-g-silver-block').value = tiers.Silver?.callsPerBlock || '';
         document.getElementById('edit-g-silver-price').value = tiers.Silver?.pricePer1000 || '';
         document.getElementById('edit-g-bronze-min').value = tiers.Bronze?.minMembers || '';
+        document.getElementById('edit-g-bronze-block').value = tiers.Bronze?.callsPerBlock || '';
         document.getElementById('edit-g-bronze-price').value = tiers.Bronze?.pricePer1000 || '';
 
         document.getElementById('admin-edit-modal').classList.remove('hidden');
     },
 
+    appendGmName(inputId) {
+        const input = document.getElementById(inputId);
+        const name = prompt('추가할 공동 길드장의 이름을 입력하세요.');
+        if (name && name.trim()) {
+            if (input.value) {
+                input.value = input.value + ', ' + name.trim();
+            } else {
+                input.value = name.trim();
+            }
+        }
+    },
+
     updateAccount(e) {
         e.preventDefault();
         const guildId = document.getElementById('edit-g-id').value;
+        const newName = document.getElementById('edit-g-name-input').value.trim();
+        const newGmName = document.getElementById('edit-g-gmname-input').value.trim();
         const newId = document.getElementById('edit-g-id-input').value.trim();
         const newPw = document.getElementById('edit-g-pw-input').value.trim();
 
-        if (newId === '') {
-            alert('아이디를 입력해주세요.');
+        if (newId === '' || newName === '' || newGmName === '') {
+            alert('필수 정보(이름/아이디)를 모두 입력해주세요.');
             return;
         }
 
         const customTiers = {
             Gold: { 
                 minMembers: parseInt(document.getElementById('edit-g-gold-min').value) || 20, 
+                callsPerBlock: parseInt(document.getElementById('edit-g-gold-block').value) || 1000,
                 pricePer1000: parseInt(document.getElementById('edit-g-gold-price').value) || 80000 
             },
             Silver: { 
                 minMembers: parseInt(document.getElementById('edit-g-silver-min').value) || 15, 
+                callsPerBlock: parseInt(document.getElementById('edit-g-silver-block').value) || 1000,
                 pricePer1000: parseInt(document.getElementById('edit-g-silver-price').value) || 70000 
             },
             Bronze: { 
                 minMembers: parseInt(document.getElementById('edit-g-bronze-min').value) || 10, 
+                callsPerBlock: parseInt(document.getElementById('edit-g-bronze-block').value) || 1000,
                 pricePer1000: parseInt(document.getElementById('edit-g-bronze-price').value) || 60000 
             }
         };
 
-        db.updateGuild(guildId, newId, newPw, '', '', customTiers);
+        const targetCalls = parseInt(document.getElementById('edit-g-custom-calls').value);
+        const rewardPerTarget = parseInt(document.getElementById('edit-g-custom-price').value);
+        const customRule = (!isNaN(targetCalls) && !isNaN(rewardPerTarget)) 
+            ? { targetCalls, rewardPerTarget } 
+            : null;
+
+        const customIncentives = [];
+        for (let i = 1; i <= 3; i++) {
+            const min = parseInt(document.getElementById(`edit-g-inc-min-${i}`).value);
+            const max = parseInt(document.getElementById(`edit-g-inc-max-${i}`).value);
+            const amount = parseInt(document.getElementById(`edit-g-inc-amt-${i}`).value);
+            if (!isNaN(min) && !isNaN(amount)) {
+                customIncentives.push({ min, max: isNaN(max) ? Infinity : max, amount });
+            }
+        }
+
+        const guild = db.getGuildById(guildId);
+        const bankName = guild ? guild.bankName : '';
+        const accountNumber = guild ? guild.accountNumber : '';
+
+        db.updateGuild(guildId, newId, newPw, bankName, accountNumber, customTiers, newName, newGmName, customRule, customIncentives);
         document.getElementById('admin-edit-modal').classList.add('hidden');
         this.renderAdmin(document.getElementById('app-content'));
-        alert('계정 및 등급 정보가 성공적으로 변경되었습니다.');
+        alert('길드 정보가 성공적으로 변경되었습니다.');
     },
 
     addGuild(e) {
@@ -1313,19 +1517,38 @@ const app = {
         const customTiers = {
             Gold: { 
                 minMembers: parseInt(document.getElementById('g-gold-min').value) || 20, 
+                callsPerBlock: parseInt(document.getElementById('g-gold-block').value) || 1000,
                 pricePer1000: parseInt(document.getElementById('g-gold-price').value) || 80000 
             },
             Silver: { 
                 minMembers: parseInt(document.getElementById('g-silver-min').value) || 15, 
+                callsPerBlock: parseInt(document.getElementById('g-silver-block').value) || 1000,
                 pricePer1000: parseInt(document.getElementById('g-silver-price').value) || 70000 
             },
             Bronze: { 
                 minMembers: parseInt(document.getElementById('g-bronze-min').value) || 10, 
+                callsPerBlock: parseInt(document.getElementById('g-bronze-block').value) || 1000,
                 pricePer1000: parseInt(document.getElementById('g-bronze-price').value) || 60000 
             }
         };
 
-        db.createGuild(name, gmName, '', '', customTiers);
+        const targetCalls = parseInt(document.getElementById('g-custom-calls').value);
+        const rewardPerTarget = parseInt(document.getElementById('g-custom-price').value);
+        const customRule = (!isNaN(targetCalls) && !isNaN(rewardPerTarget)) 
+            ? { targetCalls, rewardPerTarget } 
+            : null;
+
+        const customIncentives = [];
+        for (let i = 1; i <= 3; i++) {
+            const min = parseInt(document.getElementById(`g-inc-min-${i}`).value);
+            const max = parseInt(document.getElementById(`g-inc-max-${i}`).value);
+            const amount = parseInt(document.getElementById(`g-inc-amt-${i}`).value);
+            if (!isNaN(min) && !isNaN(amount)) {
+                customIncentives.push({ min, max: isNaN(max) ? Infinity : max, amount });
+            }
+        }
+
+        db.createGuild(name, gmName, '', '', customTiers, customRule, customIncentives);
         document.getElementById('admin-add-modal').classList.add('hidden');
         this.renderAdmin(document.getElementById('app-content'));
     },
@@ -1335,6 +1558,35 @@ const app = {
             db.deleteGuild(guildId);
             alert(`[${guildName}] 길드가 삭제되었습니다.`);
             this.renderAdmin(document.getElementById('app-content'));
+        }
+    },
+
+    resetWeekly() {
+        if (confirm('주의: 강제로 현재 진행중인 주간 데이터가 과거 정산 내역으로 마감되고 초기화됩니다. 이 작업은 되돌릴 수 없습니다. 진행하시겠습니까?')) {
+            const weekName = db.forceResetWeekly(SettlementEngine);
+            if (weekName) {
+                alert(`성공적으로 [${weekName}] 로 마감되었습니다.`);
+                this.renderAdmin(document.getElementById('app-content'));
+            } else {
+                alert('초기화에 실패했습니다.');
+            }
+        }
+    },
+
+    resetGuild(guildId) {
+        if (confirm('주의: 이 팀의 진행중인 주간 데이터만 강제로 마감되고 초기화됩니다. 계속하시겠습니까?')) {
+            const weekName = db.forceResetGuildWeekly(guildId, SettlementEngine);
+            if (weekName) {
+                alert(`해당 팀이 [${weekName}] 로 개별 마감되었습니다.`);
+                const content = document.getElementById('app-content');
+                if (this.state.currentUser.role === 'admin') {
+                    this.renderAdmin(content);
+                } else {
+                    this.renderDashboard(content);
+                }
+            } else {
+                alert('초기화에 실패했습니다.');
+            }
         }
     },
 
