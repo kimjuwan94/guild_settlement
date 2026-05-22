@@ -364,11 +364,20 @@ const app = {
 
     checkUpgradeEligibility(guildId, count, deliveries) {
         const guild = db.getGuildById(guildId);
-        const currentTier = guild.tier || 'None';
+        
+        // 단일/인센티브 적용 팀은 일반 등급 승급 시스템을 사용하지 않음
+        const hasCustomRule = guild.customRule && guild.customRule.targetCalls > 0;
+        const hasCustomInc = guild.customIncentives && guild.customIncentives.length > 0;
+        if (hasCustomRule || hasCustomInc) return;
+
+        // 기본 등급은 브론즈(Bronze)부터 시작
+        const currentTier = (guild.tier === 'None' || !guild.tier) ? 'Bronze' : guild.tier;
         let nextTier = null;
 
-        if (currentTier === 'None' && count >= 9) nextTier = 'Bronze';
+        // 승급 기준 (현재 등급의 Max 인원 달성 & 목표 콜수 달성 시 승급 요청 가능)
+        // 브론즈 -> 실버: 인원 10명 이상 & 주간 3000건 이상
         if (currentTier === 'Bronze' && count >= 10 && deliveries >= 3000) nextTier = 'Silver';
+        // 실버 -> 골드: 인원 15명 이상 & 주간 4000건 이상
         if (currentTier === 'Silver' && count >= 15 && deliveries >= 4000) nextTier = 'Gold';
 
         if (nextTier) {

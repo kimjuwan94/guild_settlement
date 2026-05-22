@@ -384,10 +384,10 @@ const eventApp = {
                             <div>
                                 <label class="text-xs font-bold text-gray-500 mb-1 block">대상 기간</label>
                                 <div class="flex items-center gap-1">
-                                    <input type="date" id="ev-start" value="${new Date().toISOString().slice(0,10)}"
+                                    <input type="date" id="ev-start" value="${localStorage.getItem('ev-start') || new Date().toISOString().slice(0,10)}"
                                         class="w-full border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
                                     <span class="text-gray-400">~</span>
-                                    <input type="date" id="ev-end" value="${new Date().toISOString().slice(0,10)}"
+                                    <input type="date" id="ev-end" value="${localStorage.getItem('ev-end') || new Date().toISOString().slice(0,10)}"
                                         class="w-full border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-purple-400 focus:outline-none">
                                 </div>
                             </div>
@@ -466,9 +466,9 @@ const eventApp = {
             <div class="glass-panel rounded-xl border border-gray-100 p-6">
                 <div class="flex flex-wrap gap-3 mb-6">
                     <div class="flex items-center gap-1 border rounded-lg px-2 bg-white focus-within:ring-2 focus-within:ring-yellow-400">
-                        <input type="date" id="rank-start" value="${new Date().toISOString().slice(0,10)}" class="py-2 text-sm focus:outline-none bg-transparent">
+                        <input type="date" id="rank-start" value="${localStorage.getItem('rank-start') || new Date().toISOString().slice(0,10)}" class="py-2 text-sm focus:outline-none bg-transparent">
                         <span class="text-gray-400">~</span>
-                        <input type="date" id="rank-end" value="${new Date().toISOString().slice(0,10)}" class="py-2 text-sm focus:outline-none bg-transparent">
+                        <input type="date" id="rank-end" value="${localStorage.getItem('rank-end') || new Date().toISOString().slice(0,10)}" class="py-2 text-sm focus:outline-none bg-transparent">
                     </div>
                     <select id="rank-region" class="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none">
                         ${regions.map(r => `<option value="${r}">${r}</option>`).join('')}
@@ -540,12 +540,16 @@ const eventApp = {
         const region = document.getElementById('ev-region')?.value || '전체';
         
         if (!start || !end) { alert('대상 기간을 선택하세요.'); return; }
+        
+        localStorage.setItem('ev-start', start);
+        localStorage.setItem('ev-end', end);
 
-        // 이벤트 내역(히스토리)에 남은 당첨자 추출 (룰렛 배제용)
+        // 이벤트 내역(히스토리)에 있는 모든 당첨자 추출 (룰렛 후보 배제용)
+        // 랭킹, 룰렛 등 이벤트 타입에 상관없이 과거 당첨 이력이 있으면 모두 배제
         const pastEvents = eventDb.getEvents();
         const prevWinnerIds = [];
         pastEvents.forEach(ev => {
-            if (ev.type === 'roulette' && ev.winners) {
+            if (ev.winners) {
                 ev.winners.forEach(w => prevWinnerIds.push(w.riderId || w.name));
             }
         });
@@ -568,12 +572,16 @@ const eventApp = {
         const region = document.getElementById('rank-region')?.value || '전체';
 
         if (!start || !end) { alert('기간을 선택하세요.'); return; }
+        
+        localStorage.setItem('rank-start', start);
+        localStorage.setItem('rank-end', end);
 
-        // 이벤트 내역(히스토리)에 남은 랭킹 이벤트 당첨자 추출 (랭킹 보드 배제용)
+        // 이벤트 내역(히스토리)에 있는 모든 당첨자 추출 (랭킹 후보 배제용)
+        // 4주 연속 이벤트 시 중복 당첨을 막기 위해 모든 과거 당첨자를 배제함
         const pastEvents = eventDb.getEvents();
         const prevRankingWinners = [];
         pastEvents.forEach(ev => {
-            if (ev.type === 'ranking' && ev.winners) {
+            if (ev.winners) {
                 ev.winners.forEach(w => prevRankingWinners.push(w.riderId || w.name));
             }
         });
