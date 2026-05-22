@@ -550,7 +550,10 @@ const eventApp = {
         const prevWinnerIds = [];
         pastEvents.forEach(ev => {
             if (ev.winners) {
-                ev.winners.forEach(w => prevWinnerIds.push(w.riderId || w.name));
+                ev.winners.forEach(w => {
+                    if (w.riderId) prevWinnerIds.push(w.riderId);
+                    if (w.name) prevWinnerIds.push(w.name);
+                });
             }
         });
 
@@ -582,7 +585,10 @@ const eventApp = {
         const prevRankingWinners = [];
         pastEvents.forEach(ev => {
             if (ev.winners) {
-                ev.winners.forEach(w => prevRankingWinners.push(w.riderId || w.name));
+                ev.winners.forEach(w => {
+                    if (w.riderId) prevRankingWinners.push(w.riderId);
+                    if (w.name) prevRankingWinners.push(w.name);
+                });
             }
         });
 

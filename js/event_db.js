@@ -222,7 +222,7 @@ const eventDb = {
         if (acceptRateMin > 0)
             candidates = candidates.filter(r => r.acceptRate === null || r.acceptRate >= acceptRateMin);
         if (excludeIds && excludeIds.length > 0)
-            candidates = candidates.filter(r => !excludeIds.includes(r.riderId));
+            candidates = candidates.filter(r => !excludeIds.includes(r.riderId) && !excludeIds.includes(r.name));
             
         // 탈퇴자 강제 배제 로직
         const withdrawnIds = this.getWithdrawnRiderIds();
