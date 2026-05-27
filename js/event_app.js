@@ -544,12 +544,12 @@ const eventApp = {
         localStorage.setItem('ev-start', start);
         localStorage.setItem('ev-end', end);
 
-        // 이벤트 내역(히스토리)에 있는 모든 당첨자 추출 (룰렛 후보 배제용)
-        // 랭킹, 룰렛 등 이벤트 타입에 상관없이 과거 당첨 이력이 있으면 모두 배제
+        // 이벤트 내역(히스토리) 중 '주유권이벤트'(roulette) 당첨자만 추출 (룰렛 후보 배제용)
+        // 랭킹이벤트와 구분하여, 주유권이벤트 내에서 당첨 이력이 있는 사람만 배제합니다.
         const pastEvents = eventDb.getEvents();
         const prevWinnerIds = [];
         pastEvents.forEach(ev => {
-            if (ev.winners) {
+            if (ev.type !== 'ranking' && ev.winners) {
                 ev.winners.forEach(w => {
                     if (w.riderId) prevWinnerIds.push(w.riderId);
                     if (w.name) prevWinnerIds.push(w.name);
@@ -579,12 +579,12 @@ const eventApp = {
         localStorage.setItem('rank-start', start);
         localStorage.setItem('rank-end', end);
 
-        // 이벤트 내역(히스토리)에 있는 모든 당첨자 추출 (랭킹 후보 배제용)
-        // 4주 연속 이벤트 시 중복 당첨을 막기 위해 모든 과거 당첨자를 배제함
+        // 이벤트 내역(히스토리) 중 '랭킹이벤트'(ranking) 당첨자만 추출 (랭킹 후보 배제용)
+        // 주유권이벤트와 구분하여, 랭킹이벤트 내에서 당첨 이력이 있는 사람만 배제합니다.
         const pastEvents = eventDb.getEvents();
         const prevRankingWinners = [];
         pastEvents.forEach(ev => {
-            if (ev.winners) {
+            if (ev.type === 'ranking' && ev.winners) {
                 ev.winners.forEach(w => {
                     if (w.riderId) prevRankingWinners.push(w.riderId);
                     if (w.name) prevRankingWinners.push(w.name);
@@ -1161,7 +1161,7 @@ const eventApp = {
 
         const event = eventDb.createEvent({
             weekLabel: `${start} ~ ${end}`, region, rewardAmount: amount, rewardLabel: label,
-            title: `${start} ~ ${end} ${region} 룰렛 추첨`
+            title: `${start} ~ ${end} ${region} 룰렛 추첨`, type: 'roulette'
         });
 
         this._winners.forEach((w, i) => {
