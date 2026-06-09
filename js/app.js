@@ -364,11 +364,16 @@ const app = {
 
     checkUpgradeEligibility(guildId, count, deliveries) {
         const guild = db.getGuildById(guildId);
-        
-        // 단일/인센티브 적용 팀은 일반 등급 승급 시스템을 사용하지 않음
+
+        // 단일단가제 또는 팀장 인센티브 설정 길드는 일반 등급 승급 시스템을 사용하지 않음
         const hasCustomRule = guild.customRule && guild.customRule.targetCalls > 0;
         const hasCustomInc = guild.customIncentives && guild.customIncentives.length > 0;
-        if (hasCustomRule || hasCustomInc) return;
+        if (hasCustomRule || hasCustomInc) {
+            // 혹시 이전에 렌더된 배너 잔재가 있을 경우 제거
+            const upgradeArea = document.getElementById('upgrade-area');
+            if (upgradeArea) upgradeArea.innerHTML = '';
+            return;
+        }
 
         // 기본 등급은 브론즈(Bronze)부터 시작
         const currentTier = (guild.tier === 'None' || !guild.tier) ? 'Bronze' : guild.tier;

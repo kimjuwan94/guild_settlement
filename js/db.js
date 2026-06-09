@@ -243,17 +243,23 @@ const db = {
     addMember(guildId, member) {
         const data = this.getData();
         const guild = this.getGuildById(guildId);
-        
-        // 1. 등급별 인원 제한 체크 (None: 9명, Bronze: 10명, Silver: 15명, Gold: 20명)
-        const currentCount = this.getHeadcountForGuild(guildId);
-        const tier = guild.tier || 'None';
-        let maxLimit = 9; // None
-        if (tier === 'Bronze') maxLimit = 10;
-        if (tier === 'Silver') maxLimit = 15;
-        if (tier === 'Gold') maxLimit = 20;
 
-        if (currentCount >= maxLimit) {
-            throw new Error(`현재 길드 등급(${tier})의 최대 인원(${maxLimit}명)에 도달했습니다. 더 추가하려면 본사에 승급을 요청하세요.`);
+        // 단일단가제 또는 팀장 인센티브 설정 길드는 인원 제한 없음
+        const hasCustomRule = guild.customRule && guild.customRule.targetCalls > 0;
+        const hasCustomInc = guild.customIncentives && guild.customIncentives.length > 0;
+
+        if (!hasCustomRule && !hasCustomInc) {
+            // 1. 등급별 인원 제한 체크 (None: 9명, Bronze: 10명, Silver: 15명, Gold: 20명)
+            const currentCount = this.getHeadcountForGuild(guildId);
+            const tier = guild.tier || 'None';
+            let maxLimit = 9; // None
+            if (tier === 'Bronze') maxLimit = 10;
+            if (tier === 'Silver') maxLimit = 15;
+            if (tier === 'Gold') maxLimit = 20;
+
+            if (currentCount >= maxLimit) {
+                throw new Error(`현재 길드 등급(${tier})의 최대 인원(${maxLimit}명)에 도달했습니다. 더 추가하려면 본사에 승급을 요청하세요.`);
+            }
         }
 
         const count = data.members.length + 1;
