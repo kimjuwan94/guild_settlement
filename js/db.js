@@ -39,77 +39,48 @@ const db = {
             const localDataStr = localStorage.getItem(this._key);
             const localData = localDataStr ? JSON.parse(localDataStr) : null;
 
-            // 2. 기본 데이터 구조 준비
-            let finalData = { ...this._defaultData };
+            // 2. dataVersion(저장 시각)을 기준으로 더 최근에 저장된 쪽을 권위 있는(primary) 소스로 결정
+            //    saveData()는 항상 dataVersion을 기록하므로, 삭제/생성 직후 로컬이 더 최신임
+            const cloudVersion = (cloudData && cloudData.dataVersion) ? cloudData.dataVersion : 0;
+            const localVersion = (localData && localData.dataVersion) ? localData.dataVersion : 0;
 
-            // 3. 지능적 데이터 병합 (서버 + 로컬 + 기본복구데이터)
-            const sourceData = cloudData || localData || this._defaultData;
-            finalData = { ...finalData, ...sourceData };
+            const primary = (cloudVersion >= localVersion) ? cloudData : localData;
+            const secondary = (cloudVersion >= localVersion) ? localData : cloudData;
 
-            const allGuilds = [...this._defaultData.guilds];
-            [cloudData, localData].forEach(d => {
-                if (d && d.guilds) {
-                    d.guilds.forEach(g => {
-                        const existing = allGuilds.find(ag => ag.id === g.id);
-                        if (!existing) {
-                            allGuilds.push(g);
-                        } else {
-                            // 기존의 강제 고정 로직 삭제
-                            // 인원수 기반 자동 등급이 우선이므로 G_RECOVERED의 경우 서버 티어 무시
-                            if (g.id !== 'G_RECOVERED' && g.tier) existing.tier = g.tier;
-                        }
-                    });
-                }
-            });
-            finalData.guilds = allGuilds;
+            let finalData;
+            if (primary) {
+                finalData = { ...this._defaultData, ...primary };
 
-            // 멤버 및 실적 병합 (최고 실적 선택)
-            const allMembers = [...this._defaultData.members];
-            [cloudData, localData].forEach(d => {
-                if (d && d.members) {
-                    d.members.forEach(m => {
-                        // 김해플로체(복구길드)의 기존 잘못된 멤버가 다시 섞이지 않도록 방지
-                        if (m.guildId === 'G_RECOVERED' && !this._defaultData.members.find(dm => dm.name === m.name)) {
-                            return; 
-                        }
+                // 길드 목록: primary를 권위 있는 소스로 사용 (삭제/생성 모두 즉시 반영)
+                // secondary에서 추가하지 않음으로써 "삭제된 길드가 되살아나는" 버그 방지
+                finalData.guilds = primary.guilds ? [...primary.guilds] : [...this._defaultData.guilds];
 
-                        // 이름 또는 ID로 기존 멤버 찾기 (공백 제거 후 매칭하여 정확도 향상)
-                        const cleanMName = m.name ? m.name.trim() : '';
-                        const existing = allMembers.find(am => (am.name && am.name.trim() === cleanMName) || am.id === m.id);
-                        
-                        if (!existing) {
-                            allMembers.push(m);
-                        } else {
-                            // 서버/로컬에 정보가 있다면 무조건 12인 명단의 빈칸을 채움
-                            if (m.baeminId) existing.baeminId = m.baeminId;
-                            if (m.coupangPhone) existing.coupangPhone = m.coupangPhone;
-                            if (m.memo) existing.memo = m.memo;
-                            
-                            // 실적은 항상 최신/최고값 유지
-                            existing.deliveries = Math.max(existing.deliveries || 0, m.deliveries || 0);
-                        }
-                    });
-                }
-            });
-            finalData.members = allMembers;
+                // 멤버 목록: primary 기준
+                finalData.members = primary.members ? [...primary.members] : [...this._defaultData.members];
 
-            // 정산 내역 병합 (중복 제거)
-            const allSettlements = [...(this._defaultData.settlements || [])];
-            [cloudData, localData].forEach(d => {
-                if (d && d.settlements) {
-                    d.settlements.forEach(s => {
+                // 정산 내역: 양쪽 모두에서 누락 없이 병합 (내역은 절대 삭제하지 않음)
+                const allSettlements = [...(primary.settlements || [])];
+                if (secondary && secondary.settlements) {
+                    secondary.settlements.forEach(s => {
                         if (!allSettlements.find(as => as.id === s.id)) allSettlements.push(s);
                     });
                 }
-            });
-            finalData.settlements = allSettlements;
+                finalData.settlements = allSettlements;
+            } else {
+                // 클라우드/로컬 모두 없으면 기본 데이터 사용
+                finalData = { ...this._defaultData };
+            }
 
             this._memoryData = finalData;
-            
-            // 4. 합본을 양쪽에 다시 저장 (복구 및 동기화)
+
+            // 3. 병합 결과를 양쪽에 동기화 (dataVersion은 유지, saveData()는 사용자 액션에만 호출)
             localStorage.setItem(this._key, JSON.stringify(this._memoryData));
-            if (this._memoryData.guilds.length > 0) {
-                this.saveData(this._memoryData);
+            if (this._memoryData.guilds && this._memoryData.guilds.length > 0) {
+                fetch(this._firebaseUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this._memoryData)
+                }).catch(e => console.error('Firebase sync on load failed:', e));
             }
         } catch (e) {
             console.error('Data load failed, falling back to local storage:', e);
@@ -130,8 +101,9 @@ const db = {
     },
 
     saveData(data) {
+        data.dataVersion = Date.now(); // 저장 시각 기록 (loadFromServer 병합 시 우선순위 결정에 사용)
         this._memoryData = data;
-        
+
         // 1. 로컬 백업 저장 (오프라인/에러 대비)
         try {
             localStorage.setItem(this._key, JSON.stringify(data));
@@ -175,8 +147,8 @@ const db = {
 
     createGuild(name, gmName, bankName = '', accountNumber = '', customTiers = null, customRule = null, customIncentives = null) {
         const data = this.getData();
-        const count = data.guilds.length + 1;
-        const generatedId = 'G' + String(count).padStart(3, '0');
+        // 타임스탬프 기반 ID: 삭제 후 재생성 시 발생하는 ID 충돌 방지
+        const generatedId = 'G' + Date.now();
         
         // Generate random 4-digit password
         const randomPw = Math.floor(1000 + Math.random() * 9000).toString();

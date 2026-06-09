@@ -766,9 +766,9 @@ const app = {
 
     renderAdmin(container) {
         if (this.state.currentUser.role !== 'admin') return;
-        const guilds = db.getGuilds();
+        const guilds = db.getGuilds() || [];
         const currentWeekName = db.getCurrentWeekName();
-        
+
         let guildRows = guilds.map(g => {
             const activeCount = db.getHeadcountForGuild(g.id);
             const deliveries = db.getTotalDeliveriesForGuild(g.id);
@@ -793,7 +793,7 @@ const app = {
                                 <button onclick="app.resetGuild('${g.id}')" class="text-gray-400 hover:text-red-500 transition-colors" title="이 길드만 수동 마감(초기화)">
                                     <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                                 </button>
-                                <button onclick="app.promptEditAccount('${g.id}', '${g.name}', '${g.gmName}', '${g.username}', '${g.password}', '${g.bankName || ''}', '${g.accountNumber || ''}', '${encodeURIComponent(JSON.stringify(g.customTiers || {}))}', '${encodeURIComponent(JSON.stringify(g.customRule || {}))}', '${encodeURIComponent(JSON.stringify(g.customIncentives || []))}')" class="text-gray-400 hover:text-blue-600 transition-colors" title="길드 정보 수정">
+                                <button onclick="app.promptEditAccount('${g.id}')" class="text-gray-400 hover:text-blue-600 transition-colors" title="길드 정보 수정">
                                     <i data-lucide="pencil" class="w-4 h-4"></i>
                                 </button>
                             </div>
@@ -808,7 +808,7 @@ const app = {
                             <button onclick="app.switchToGuild('${g.id}')" class="px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 font-bold text-xs flex items-center transition-colors">
                                 <i data-lucide="log-in" class="w-3 h-3 mr-1"></i> 접속
                             </button>
-                            <button onclick="app.handleDeleteGuild('${g.id}', '${g.name}')" class="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 font-bold text-xs flex items-center transition-colors">
+                            <button onclick="app.handleDeleteGuild('${g.id}')" class="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 font-bold text-xs flex items-center transition-colors">
                                 <i data-lucide="trash-2" class="w-3 h-3 mr-1"></i> 삭제
                             </button>
                         </div>
@@ -1429,31 +1429,30 @@ const app = {
         }
     },
 
-    promptEditAccount(guildId, guildName, gmName, currentUsername, currentPassword, currentBankName, currentAccountNumber, customTiersJson = '{}', customRuleJson = '{}', customIncJson = '[]') {
-        document.getElementById('edit-g-id').value = guildId;
-        document.getElementById('edit-g-name-input').value = guildName;
-        document.getElementById('edit-g-gmname-input').value = gmName;
-        document.getElementById('edit-g-id-input').value = currentUsername;
-        document.getElementById('edit-g-pw-input').value = currentPassword;
-        
-        let tiers = {};
-        try { tiers = JSON.parse(decodeURIComponent(customTiersJson)) || {}; } catch(e) {}
-        
-        let rule = {};
-        try { rule = JSON.parse(decodeURIComponent(customRuleJson)) || {}; } catch(e) {}
+    promptEditAccount(guildId) {
+        const g = db.getGuildById(guildId);
+        if (!g) return;
 
-        let incs = [];
-        try { incs = JSON.parse(decodeURIComponent(customIncJson)) || []; } catch(e) {}
+        document.getElementById('edit-g-id').value = g.id;
+        document.getElementById('edit-g-name-input').value = g.name;
+        document.getElementById('edit-g-gmname-input').value = g.gmName;
+        document.getElementById('edit-g-id-input').value = g.username;
+        document.getElementById('edit-g-pw-input').value = g.password;
+
+        const tiers = g.customTiers || {};
+        const rule = g.customRule || {};
+        const incs = g.customIncentives || [];
 
         document.getElementById('edit-g-custom-calls').value = rule.targetCalls || '';
         document.getElementById('edit-g-custom-price').value = rule.rewardPerTarget || '';
-        
-        for (let i=0; i<3; i++) {
-            document.getElementById(`edit-g-inc-min-${i+1}`).value = incs[i]?.min || '';
-            document.getElementById(`edit-g-inc-max-${i+1}`).value = incs[i]?.max || '';
-            document.getElementById(`edit-g-inc-amt-${i+1}`).value = incs[i]?.amount || '';
+
+        for (let i = 0; i < 3; i++) {
+            const inc = incs[i] || {};
+            document.getElementById(`edit-g-inc-min-${i+1}`).value = inc.min != null ? inc.min : '';
+            document.getElementById(`edit-g-inc-max-${i+1}`).value = (inc.max != null && inc.max !== Infinity) ? inc.max : '';
+            document.getElementById(`edit-g-inc-amt-${i+1}`).value = inc.amount != null ? inc.amount : '';
         }
-        
+
         document.getElementById('edit-g-gold-min').value = tiers.Gold?.minMembers || '';
         document.getElementById('edit-g-gold-block').value = tiers.Gold?.callsPerBlock || '';
         document.getElementById('edit-g-gold-price').value = tiers.Gold?.pricePer1000 || '';
@@ -1580,7 +1579,9 @@ const app = {
         this.renderAdmin(document.getElementById('app-content'));
     },
 
-    handleDeleteGuild(guildId, guildName) {
+    handleDeleteGuild(guildId) {
+        const guild = db.getGuildById(guildId);
+        const guildName = guild ? guild.name : guildId;
         if (confirm(`[${guildName}] 길드를 정말 삭제하시겠습니까?\n삭제 시 해당 길드의 모든 멤버 데이터도 함께 영구 삭제되며 복구할 수 없습니다.`)) {
             db.deleteGuild(guildId);
             alert(`[${guildName}] 길드가 삭제되었습니다.`);
