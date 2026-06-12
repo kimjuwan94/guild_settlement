@@ -39,26 +39,35 @@ const db = {
             const localDataStr = localStorage.getItem(this._key);
             const localData = localDataStr ? JSON.parse(localDataStr) : null;
 
-            // 2. dataVersion(저장 시각)을 기준으로 더 최근에 저장된 쪽을 권위 있는(primary) 소스로 결정
-            //    saveData()는 항상 dataVersion을 기록하므로, 삭제/생성 직후 로컬이 더 최신임
+            // 2. dataVersion(저장 시각)을 기준으로 더 최근 쪽을 primary로 결정
+            //    버전이 같거나 로컬이 더 크면 → 로컬 우선
+            //    (로컬 저장은 동기식 → Firebase PUT보다 항상 먼저 완료되므로 로컬이 더 최신)
             const cloudVersion = (cloudData && cloudData.dataVersion) ? cloudData.dataVersion : 0;
             const localVersion = (localData && localData.dataVersion) ? localData.dataVersion : 0;
 
-            const primary = (cloudVersion >= localVersion) ? cloudData : localData;
-            const secondary = (cloudVersion >= localVersion) ? localData : cloudData;
+            const localIsPrimary = (localVersion >= cloudVersion);
+            const primary = localIsPrimary ? localData : cloudData;
+            const secondary = localIsPrimary ? cloudData : localData;
 
             let finalData;
             if (primary) {
                 finalData = { ...this._defaultData, ...primary };
 
-                // 길드 목록: primary를 권위 있는 소스로 사용 (삭제/생성 모두 즉시 반영)
-                // secondary에서 추가하지 않음으로써 "삭제된 길드가 되살아나는" 버그 방지
+                // 길드: primary 기준 (삭제/생성 즉시 반영, 삭제된 길드 되살리기 방지)
                 finalData.guilds = primary.guilds ? [...primary.guilds] : [...this._defaultData.guilds];
 
-                // 멤버 목록: primary 기준
-                finalData.members = primary.members ? [...primary.members] : [...this._defaultData.members];
+                // 멤버: 양쪽 누적 병합 — Firebase PUT 비동기 완료 전 새로고침으로 인한 데이터 소실 방지
+                const allMembers = [...(primary.members || [])];
+                if (secondary && secondary.members) {
+                    secondary.members.forEach(m => {
+                        if (!allMembers.find(am => am.id === m.id)) allMembers.push(m);
+                    });
+                }
+                // 존재하는 길드 소속 멤버만 유지 (삭제된 길드의 멤버 정리)
+                const validGuildIds = new Set(finalData.guilds.map(g => g.id));
+                finalData.members = allMembers.filter(m => validGuildIds.has(m.guildId));
 
-                // 정산 내역: 양쪽 모두에서 누락 없이 병합 (내역은 절대 삭제하지 않음)
+                // 정산 내역: 양쪽 누적 병합
                 const allSettlements = [...(primary.settlements || [])];
                 if (secondary && secondary.settlements) {
                     secondary.settlements.forEach(s => {
@@ -66,14 +75,27 @@ const db = {
                     });
                 }
                 finalData.settlements = allSettlements;
+
+                // 등록 이력: 양쪽 누적 병합
+                const allHistory = [...(primary.registrationHistory || [])];
+                if (secondary && secondary.registrationHistory) {
+                    secondary.registrationHistory.forEach(h => {
+                        const exists = allHistory.find(ah =>
+                            ah.timestamp === h.timestamp && ah.type === h.type && ah.guildId === h.guildId
+                        );
+                        if (!exists) allHistory.push(h);
+                    });
+                }
+                finalData.registrationHistory = allHistory;
+            } else if (secondary) {
+                finalData = { ...this._defaultData, ...secondary };
             } else {
-                // 클라우드/로컬 모두 없으면 기본 데이터 사용
                 finalData = { ...this._defaultData };
             }
 
             this._memoryData = finalData;
 
-            // 3. 병합 결과를 양쪽에 동기화 (dataVersion은 유지, saveData()는 사용자 액션에만 호출)
+            // 3. 병합 결과를 양쪽에 동기화 (dataVersion은 유지)
             localStorage.setItem(this._key, JSON.stringify(this._memoryData));
             if (this._memoryData.guilds && this._memoryData.guilds.length > 0) {
                 fetch(this._firebaseUrl, {
