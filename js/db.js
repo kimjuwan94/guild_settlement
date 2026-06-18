@@ -685,6 +685,34 @@ const db = {
         return this.getData().uploadHistory || [];
     },
 
+    resetSettlementDeliveries(settlementId, settlementEngine) {
+        const data = this.getData();
+        const s = data.settlements.find(x => x.id === settlementId);
+        if (!s) return false;
+        const guild = data.guilds.find(g => g.id === s.guildId);
+        if (s.memberStats) s.memberStats.forEach(ms => { ms.deliveries = 0; });
+        s.totalDeliveries = 0;
+        s.recognizedDeliveries = 0;
+        s.chunks = 0;
+        s.totalAmount = 0;
+        if (settlementEngine) {
+            const res = settlementEngine.calculateSettlement(s.memberCount, 0, guild?.customTiers, guild?.customRule);
+            s.tier = res.tier;
+        }
+        // 이 정산의 weekName에 해당하는 과거 업로드 이력도 함께 제거
+        if (data.uploadHistory) {
+            data.uploadHistory = data.uploadHistory.filter(u =>
+                !(u.weekName === s.weekName && u.weekType === 'past' && u.memberDeliveries &&
+                  Object.keys(u.memberDeliveries).some(mId => {
+                      const m = data.members.find(x => x.id === mId);
+                      return m && m.guildId === s.guildId;
+                  }))
+            );
+        }
+        this.saveData(data);
+        return true;
+    },
+
     deleteUpload(uploadId, settlementEngine) {
         const data = this.getData();
         if (!data.uploadHistory) return false;
