@@ -785,143 +785,104 @@ const app = {
             ? '<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-teal-100 text-teal-800">배민</span>'
             : '<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800">쿠팡</span>';
 
-        // ══ 섹션 1: 업로드된 엑셀 파일 목록 ══
-        let section1Html;
-        if (uploadHistory.length === 0) {
-            section1Html = `
-                <div class="text-center py-8 text-gray-400 bg-gray-50 rounded-xl border border-gray-100">
-                    <i data-lucide="file-x" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
-                    <p class="text-sm">업로드 이력이 없습니다.</p>
+        // 추적된 업로드가 있는 weekName 집합
+        const trackedWeekNames = new Set(uploadHistory.map(r => r.weekName));
+
+        // 이력 없이 배달 건수가 있는 정산 → 주차별 집계 (미추적)
+        const untrackedMap = {};
+        allSettlements.forEach(s => {
+            if (s.totalDeliveries > 0 && !trackedWeekNames.has(s.weekName)) {
+                if (!untrackedMap[s.weekName]) untrackedMap[s.weekName] = { total: 0, guildNames: [] };
+                const guild = guilds.find(g => g.id === s.guildId);
+                untrackedMap[s.weekName].total += s.totalDeliveries;
+                untrackedMap[s.weekName].guildNames.push(guild ? guild.name : s.guildId);
+            }
+        });
+        const untrackedEntries = Object.entries(untrackedMap).sort((a, b) => b[0].localeCompare(a[0]));
+
+        const hasAnything = uploadHistory.length > 0 || untrackedEntries.length > 0;
+
+        if (!hasAnything) {
+            container.innerHTML = `
+                <div class="text-center py-14 text-gray-400 bg-gray-50 rounded-xl border border-gray-100">
+                    <i data-lucide="file-x" class="w-10 h-10 mx-auto mb-3 opacity-40"></i>
+                    <p class="text-sm font-medium">업로드 이력이 없습니다.</p>
                     <p class="text-xs mt-1">엑셀 정산 업로드 메뉴에서 파일을 업로드하면 여기에 기록됩니다.</p>
                 </div>`;
-        } else {
-            const uploadRows = uploadHistory.map(r => {
-                const dt = new Date(r.uploadedAt);
-                const dtStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-                const fileList = (r.filenames || []).join(', ') || '-';
-                const weekTypeLabel = r.weekType === 'current'
-                    ? '<span class="text-blue-600 text-xs">현재주차</span>'
-                    : '<span class="text-gray-500 text-xs">소급</span>';
-                return `
-                    <tr class="border-b border-gray-100 hover:bg-gray-50">
-                        <td class="py-3 px-4">${pbadge(r.platform)}</td>
-                        <td class="py-3 px-4 text-xs text-gray-500">${dtStr}</td>
-                        <td class="py-3 px-4 text-xs text-gray-700 max-w-xs">
-                            <div class="truncate" title="${fileList}">${fileList}</div>
-                            <div class="text-gray-400 mt-0.5">${r.weekName || '-'} · ${weekTypeLabel}</div>
-                        </td>
-                        <td class="py-3 px-4 text-center text-sm text-gray-600">${(r.totalRows||0).toLocaleString()}행</td>
-                        <td class="py-3 px-4 text-center">
-                            <span class="font-semibold text-blue-700">+${(r.matchedCount||0).toLocaleString()}건</span>
-                        </td>
-                        <td class="py-3 px-4 text-center">
-                            <button onclick="app.deleteUploadRecord('${r.id}')"
-                                class="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 hover:border-red-400 transition-colors">
-                                삭제
-                            </button>
-                        </td>
-                    </tr>`;
-            }).join('');
-
-            section1Html = `
-                <div class="glass-panel rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                    <table class="w-full">
-                        <thead class="bg-gray-50">
-                            <tr class="text-xs text-gray-500 border-b border-gray-200">
-                                <th class="py-2.5 px-4 text-left">플랫폼</th>
-                                <th class="py-2.5 px-4 text-left">업로드 일시</th>
-                                <th class="py-2.5 px-4 text-left">파일명 / 주차</th>
-                                <th class="py-2.5 px-4 text-center">스캔 행수</th>
-                                <th class="py-2.5 px-4 text-center">매칭 건수</th>
-                                <th class="py-2.5 px-4 text-center">삭제</th>
-                            </tr>
-                        </thead>
-                        <tbody>${uploadRows}</tbody>
-                    </table>
-                </div>`;
+            lucide.createIcons();
+            return;
         }
 
-        // ══ 섹션 2: 주차별 정산 데이터 현황 (초기화) ══
-        const weekMap = {};
-        allSettlements.forEach(s => {
-            if (!weekMap[s.weekName]) weekMap[s.weekName] = [];
-            weekMap[s.weekName].push(s);
-        });
-        const sortedWeeks = Object.keys(weekMap).sort((a, b) => b.localeCompare(a));
-
-        const weekCards = sortedWeeks.map(weekName => {
-            const settlements = weekMap[weekName];
-            const hasData = settlements.some(s => s.totalDeliveries > 0);
-
-            const rows = settlements.map(s => {
-                const guild = guilds.find(g => g.id === s.guildId);
-                const gName = guild ? guild.name : s.guildId;
-                const dataMembers = (s.memberStats || []).filter(ms => ms.deliveries > 0).length;
-                const delivStr = s.totalDeliveries > 0
-                    ? `<span class="font-semibold text-green-700">${s.totalDeliveries.toLocaleString()}건</span>`
-                    : `<span class="text-gray-300">-</span>`;
-                const amtStr = s.totalAmount > 0 ? s.totalAmount.toLocaleString() + '원' : '-';
-                const btn = s.totalDeliveries > 0
-                    ? `<button onclick="app.resetSettlementData('${s.id}')"
-                           class="px-2 py-1 text-xs font-medium text-orange-600 border border-orange-200 rounded-lg hover:bg-orange-50 hover:border-orange-400 transition-colors">
-                           초기화
-                       </button>`
-                    : `<span class="text-xs text-gray-200">-</span>`;
-                return `
-                    <tr class="border-b border-gray-50 hover:bg-gray-50">
-                        <td class="py-2 px-4 text-sm text-gray-800">${gName}</td>
-                        <td class="py-2 px-4 text-center text-sm">${delivStr}</td>
-                        <td class="py-2 px-4 text-center text-xs text-gray-500">${dataMembers > 0 ? dataMembers + '명' : '-'}</td>
-                        <td class="py-2 px-4 text-right text-xs text-gray-600">${amtStr}</td>
-                        <td class="py-2 px-4 text-center">${btn}</td>
-                    </tr>`;
-            }).join('');
-
-            const statusBadge = hasData
-                ? '<span class="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">데이터 있음</span>'
-                : '<span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">데이터 없음</span>';
-
+        // 추적된 업로드 행
+        const trackedRows = uploadHistory.map(r => {
+            const dt = new Date(r.uploadedAt);
+            const dtStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+            const fileList = (r.filenames || []).join(', ') || '-';
+            const weekTypeLabel = r.weekType === 'current' ? '현재주차' : '소급';
             return `
-                <div class="glass-panel rounded-xl border border-gray-100 shadow-sm mb-4 overflow-hidden">
-                    <div class="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
-                        <span class="font-bold text-sm text-gray-800">${weekName}</span>
-                        ${statusBadge}
-                    </div>
-                    <table class="w-full">
-                        <thead>
-                            <tr class="text-xs text-gray-400 border-b border-gray-100">
-                                <th class="py-2 px-4 text-left">길드</th>
-                                <th class="py-2 px-4 text-center">배달건수</th>
-                                <th class="py-2 px-4 text-center">인원</th>
-                                <th class="py-2 px-4 text-right">정산금액</th>
-                                <th class="py-2 px-4 text-center">초기화</th>
-                            </tr>
-                        </thead>
-                        <tbody>${rows}</tbody>
-                    </table>
-                </div>`;
+                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="py-3 px-4">${pbadge(r.platform)}</td>
+                    <td class="py-3 px-4 text-xs text-gray-500 whitespace-nowrap">${dtStr}</td>
+                    <td class="py-3 px-4 text-xs text-gray-700">
+                        <div class="font-medium" title="${fileList}">${fileList}</div>
+                        <div class="text-gray-400 mt-0.5">${r.weekName || '-'} · <span class="text-blue-500">${weekTypeLabel}</span></div>
+                    </td>
+                    <td class="py-3 px-4 text-center font-semibold text-blue-700 text-sm">${(r.matchedCount||0).toLocaleString()}건</td>
+                    <td class="py-3 px-4 text-center">
+                        <button onclick="app.deleteUploadRecord('${r.id}')"
+                            class="px-3 py-1.5 text-xs font-bold text-red-600 border border-red-300 rounded-lg hover:bg-red-50 hover:border-red-500 transition-colors">
+                            삭제
+                        </button>
+                    </td>
+                </tr>`;
+        }).join('');
+
+        // 미추적 데이터 행 (이력 기능 도입 전 업로드)
+        const untrackedRows = untrackedEntries.map(([weekName, info]) => {
+            const gNames = info.guildNames.slice(0, 3).join(', ') + (info.guildNames.length > 3 ? ` 외 ${info.guildNames.length - 3}개` : '');
+            const safeWeek = weekName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            return `
+                <tr class="border-b border-orange-100 hover:bg-orange-50">
+                    <td class="py-3 px-4">
+                        <span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-orange-100 text-orange-600">미추적</span>
+                    </td>
+                    <td class="py-3 px-4 text-xs text-gray-400">이력 없음</td>
+                    <td class="py-3 px-4 text-xs">
+                        <div class="font-medium text-gray-700">${weekName}</div>
+                        <div class="text-gray-400 mt-0.5">${gNames}</div>
+                    </td>
+                    <td class="py-3 px-4 text-center font-semibold text-orange-600 text-sm">${info.total.toLocaleString()}건</td>
+                    <td class="py-3 px-4 text-center">
+                        <button onclick="app.resetWeekData('${safeWeek}')"
+                            class="px-3 py-1.5 text-xs font-bold text-orange-600 border border-orange-300 rounded-lg hover:bg-orange-100 hover:border-orange-500 transition-colors">
+                            초기화
+                        </button>
+                    </td>
+                </tr>`;
         }).join('');
 
         container.innerHTML = `
-            <!-- 섹션 1 -->
-            <div class="mb-8">
-                <h3 class="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <i data-lucide="file-spreadsheet" class="w-5 h-5 text-teal-600"></i>
-                    업로드된 엑셀 파일 목록
-                    <span class="text-xs font-normal text-gray-400 ml-1">— 삭제 시 해당 배달 건수 차감</span>
-                </h3>
-                ${section1Html}
+            <div class="glass-panel rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr class="text-xs text-gray-500 border-b border-gray-200">
+                            <th class="py-2.5 px-4 text-left w-20">플랫폼</th>
+                            <th class="py-2.5 px-4 text-left w-36">업로드 일시</th>
+                            <th class="py-2.5 px-4 text-left">파일명 / 주차</th>
+                            <th class="py-2.5 px-4 text-center w-24">건수</th>
+                            <th class="py-2.5 px-4 text-center w-24">삭제/초기화</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${trackedRows}
+                        ${untrackedRows}
+                    </tbody>
+                </table>
             </div>
-
-            <!-- 섹션 2 -->
-            <div>
-                <h3 class="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <i data-lucide="calendar" class="w-5 h-5 text-blue-600"></i>
-                    주차별 정산 데이터 현황
-                    <span class="text-xs font-normal text-gray-400 ml-1">— 중복 등 잘못된 데이터는 [초기화] 후 재업로드</span>
-                </h3>
-                ${weekCards || '<div class="text-center py-8 text-gray-400">정산 데이터가 없습니다.</div>'}
-            </div>
+            ${untrackedEntries.length > 0 ? `
+            <p class="mt-3 text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-4 py-2.5">
+                <strong>미추적 항목</strong>: 이력 기능 도입 전에 업로드된 데이터입니다. [초기화]로 해당 주차 전체 배달 건수를 0으로 리셋 후 재업로드할 수 있습니다.
+            </p>` : ''}
         `;
         lucide.createIcons();
     },
@@ -929,6 +890,17 @@ const app = {
     resetSettlementData(settlementId) {
         if (!confirm('이 길드의 배달 건수를 0으로 초기화하시겠습니까?\n초기화 후 올바른 엑셀을 다시 업로드하세요.')) return;
         const ok = db.resetSettlementDeliveries(settlementId, SettlementEngine);
+        if (ok) {
+            alert('초기화 완료. 엑셀 업로드 메뉴에서 올바른 파일을 다시 업로드하세요.');
+            this.renderUploadHistory(document.getElementById('app-content'));
+        } else {
+            alert('초기화 실패.');
+        }
+    },
+
+    resetWeekData(weekName) {
+        if (!confirm(`'${weekName}'\n이 주차의 모든 길드 배달 건수를 0으로 초기화하시겠습니까?\n초기화 후 올바른 엑셀을 다시 업로드하세요.`)) return;
+        const ok = db.resetWeekDeliveries(weekName, SettlementEngine);
         if (ok) {
             alert('초기화 완료. 엑셀 업로드 메뉴에서 올바른 파일을 다시 업로드하세요.');
             this.renderUploadHistory(document.getElementById('app-content'));

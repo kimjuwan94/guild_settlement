@@ -713,6 +713,29 @@ const db = {
         return true;
     },
 
+    resetWeekDeliveries(weekName, settlementEngine) {
+        const data = this.getData();
+        const weekSettlements = data.settlements.filter(s => s.weekName === weekName);
+        if (weekSettlements.length === 0) return false;
+        weekSettlements.forEach(s => {
+            const guild = data.guilds.find(g => g.id === s.guildId);
+            if (s.memberStats) s.memberStats.forEach(ms => { ms.deliveries = 0; });
+            s.totalDeliveries = 0;
+            s.recognizedDeliveries = 0;
+            s.chunks = 0;
+            s.totalAmount = 0;
+            if (settlementEngine) {
+                const res = settlementEngine.calculateSettlement(s.memberCount, 0, guild?.customTiers, guild?.customRule);
+                s.tier = res.tier;
+            }
+        });
+        if (data.uploadHistory) {
+            data.uploadHistory = data.uploadHistory.filter(u => u.weekName !== weekName);
+        }
+        this.saveData(data);
+        return true;
+    },
+
     deleteUpload(uploadId, settlementEngine) {
         const data = this.getData();
         if (!data.uploadHistory) return false;
