@@ -23,6 +23,7 @@ const db = {
         settlements: [],
         globalNotice: "",
         upgradeRequests: [], // { guildId, currentTier, requestedTier, status: 'pending'|'approved'|'rejected', createdAt }
+        uploadHistory: [], // [{ id, platform, weekType, weekName, uploadedAt, filenames, totalRows, matchedCount, memberDeliveries }]
         registrationHistory: [
             { type: 'system_recovery', guildId: 'G_RECOVERED', name: '시스템 복구', timestamp: new Date().toISOString(), details: '김해플로체 12명 명단 및 상세 정보(배민/쿠팡) 일괄 복구 완료' }
         ] // [{ type: 'member_add'|'guild_add', guildId, name, timestamp, details }]
@@ -677,6 +678,56 @@ const db = {
             req.status = 'rejected';
             this.saveData(data);
         }
+    },
+
+    // --- Upload History ---
+    getUploadHistory() {
+        return this.getData().uploadHistory || [];
+    },
+
+    deleteUpload(uploadId, settlementEngine) {
+        const data = this.getData();
+        if (!data.uploadHistory) return false;
+
+        const record = data.uploadHistory.find(r => r.id === uploadId);
+        if (!record) return false;
+
+        if (record.weekType === 'current') {
+            // 현재 주차 멤버 배달 건수에서 차감
+            for (const [mId, count] of Object.entries(record.memberDeliveries)) {
+                const member = data.members.find(m => m.id === mId);
+                if (member) member.deliveries = Math.max(0, (member.deliveries || 0) - count);
+            }
+        } else {
+            // 과거 정산 memberStats에서 차감 후 재계산
+            const affectedGuildIds = new Set();
+            for (const [mId, count] of Object.entries(record.memberDeliveries)) {
+                const member = data.members.find(m => m.id === mId);
+                if (!member) continue;
+                const settlement = data.settlements.find(s => s.guildId === member.guildId && s.weekName === record.weekName);
+                if (!settlement || !settlement.memberStats) continue;
+                const stat = settlement.memberStats.find(ms => ms.id === mId);
+                if (stat) stat.deliveries = Math.max(0, stat.deliveries - count);
+                affectedGuildIds.add(member.guildId);
+            }
+            affectedGuildIds.forEach(guildId => {
+                const guild = data.guilds.find(g => g.id === guildId);
+                const settlement = data.settlements.find(s => s.guildId === guildId && s.weekName === record.weekName);
+                if (!settlement) return;
+                settlement.totalDeliveries = (settlement.memberStats || []).reduce((sum, ms) => sum + ms.deliveries, 0);
+                if (settlementEngine) {
+                    const res = settlementEngine.calculateSettlement(settlement.memberCount, settlement.totalDeliveries, guild?.customTiers, guild?.customRule);
+                    settlement.tier = res.tier;
+                    settlement.recognizedDeliveries = res.recognizedDeliveries;
+                    settlement.chunks = res.chunks;
+                    settlement.totalAmount = res.totalAmount;
+                }
+            });
+        }
+
+        data.uploadHistory = data.uploadHistory.filter(r => r.id !== uploadId);
+        this.saveData(data);
+        return true;
     }
 };
 

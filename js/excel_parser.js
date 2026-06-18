@@ -68,7 +68,8 @@ const ExcelParser = {
                     const worksheet = workbook.Sheets[sheetName];
                     
                     // ✅ 제목 행(Header Row) 자동 찾기 로직
-                    // 첫 20행을 뒤져서 '성함'이나 '라이더명', '이름'이 있는 행을 헤더로 설정
+                    // 첫 20행을 뒤져서 이름/ID 관련 헤더가 있는 행을 찾음 (대소문자·공백 무시)
+                    const HEADER_KEYWORDS = ['성함', '라이더명', '이름', '기사명', '라이더id', 'userid', '아이디', '배민id', '배달파트너명', '파트너명'];
                     const range = XLSX.utils.decode_range(worksheet['!ref']);
                     let headerRowIndex = 0;
                     for (let r = 0; r <= Math.min(20, range.e.r); r++) {
@@ -76,8 +77,8 @@ const ExcelParser = {
                         for (let c = range.s.c; c <= range.e.c; c++) {
                             const cell = worksheet[XLSX.utils.encode_cell({r, c})];
                             if (cell && cell.v) {
-                                const val = cell.v.toString().replace(/\s/g, '');
-                                if (['성함', '라이더명', '이름', '기사명', '라이더ID', 'UserID'].some(k => val.includes(k))) {
+                                const val = cell.v.toString().replace(/\s/g, '').toLowerCase();
+                                if (HEADER_KEYWORDS.some(k => val.includes(k))) {
                                     isHeader = true;
                                     break;
                                 }
@@ -113,9 +114,9 @@ const ExcelParser = {
                             const excludedStatuses = ['취소', '반려', '취소완료', '배달취소', 'cancel', 'cancelled', 'rejected'];
                             if (statusStr && excludedStatuses.some(s => statusStr.toLowerCase().includes(s))) return;
 
-                            // 라이더ID, User ID 모두 탐색
-                            const id = this._findValue(row, ['라이더id', 'userid', 'user id', '아이디', '배민아이디', '라이더계정', '이메일']);
-                            const name = this._findValue(row, ['라이더명', '이름', '기사명', '성명', '라이더이름']);
+                            // 라이더ID, User ID 모두 탐색 (다양한 컬럼명 변형 대응)
+                            const id = this._findValue(row, ['라이더id', 'userid', 'user id', '아이디', '배민아이디', '라이더아이디', '배민id', '라이더계정', '이메일', 'id']);
+                            const name = this._findValue(row, ['라이더명', '이름', '기사명', '성명', '라이더이름', '성함', '배달파트너명', '파트너명']);
                             
                             const cleanExcelId = id.toString().trim();
                             const cleanExcelName = name.toString().trim().replace(/\s/g, '');

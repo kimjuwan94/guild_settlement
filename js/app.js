@@ -108,6 +108,7 @@ const app = {
         document.getElementById('nav-members').style.display = !isAdmin ? 'flex' : 'none';
         document.getElementById('nav-history').style.display = !isAdmin ? 'flex' : 'none'; // GM Only
         document.getElementById('nav-upload').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
+        document.getElementById('nav-upload-history').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
         document.getElementById('nav-admin-overview').style.display = isAdmin ? 'flex' : 'none';
         document.getElementById('nav-admin-history').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
         document.getElementById('nav-admin-history-log').style.display = isAdmin ? 'flex' : 'none'; // ONLY ADMIN
@@ -161,6 +162,10 @@ const app = {
             case 'upload':
                 titleArea.innerText = '전체 길드 정산서 업로드 (Admin)';
                 this.renderUpload(contentArea);
+                break;
+            case 'upload-history':
+                titleArea.innerText = '엑셀 업로드 이력 관리 (Admin)';
+                this.renderUploadHistory(contentArea);
                 break;
             case 'admin-overview':
                 titleArea.innerText = `전체 길드 통합 현황 (${currentWeekName})`;
@@ -767,6 +772,107 @@ const app = {
             <div id="upload-result" class="hidden"></div>
         `;
         lucide.createIcons();
+    },
+
+    renderUploadHistory(container) {
+        if (this.state.currentUser.role !== 'admin') return;
+        const history = db.getUploadHistory();
+
+        if (history.length === 0) {
+            container.innerHTML = `
+                <div class="glass-panel p-12 rounded-xl text-center text-gray-400">
+                    <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-4 opacity-40"></i>
+                    <p class="font-medium">업로드 이력이 없습니다.</p>
+                    <p class="text-sm mt-1">엑셀 업로드 메뉴에서 파일을 업로드하면 이곳에 기록됩니다.</p>
+                </div>`;
+            lucide.createIcons();
+            return;
+        }
+
+        // 주차별로 그룹화 (최신 주차 순)
+        const grouped = {};
+        history.forEach(r => {
+            const key = r.weekName || '주차 미지정';
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(r);
+        });
+        // 각 그룹 내 최신 순 정렬
+        Object.values(grouped).forEach(g => g.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)));
+        // 그룹 키 정렬: 현재 주차 > 최신 과거 주차 순
+        const sortedKeys = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+
+        const platformBadge = p => p === 'baemin'
+            ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-teal-100 text-teal-800">배민</span>'
+            : '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800">쿠팡</span>';
+
+        const weekTypeBadge = t => t === 'current'
+            ? '<span class="text-xs text-blue-600 font-medium">현재 주차</span>'
+            : '<span class="text-xs text-gray-500">소급</span>';
+
+        const rows = sortedKeys.map(weekName => {
+            const records = grouped[weekName];
+            const totalMatched = records.reduce((s, r) => s + (r.matchedCount || 0), 0);
+            const recordRows = records.map(r => {
+                const dt = new Date(r.uploadedAt);
+                const dtStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+                const fileList = (r.filenames || []).join(', ') || '-';
+                return `
+                    <tr class="border-b border-gray-50 hover:bg-gray-50">
+                        <td class="py-2.5 px-4 text-sm">${platformBadge(r.platform)}</td>
+                        <td class="py-2.5 px-4 text-xs text-gray-500">${dtStr}</td>
+                        <td class="py-2.5 px-4 text-xs text-gray-600 max-w-xs truncate" title="${fileList}">${fileList}</td>
+                        <td class="py-2.5 px-4 text-sm text-center">${(r.totalRows || 0).toLocaleString()}행</td>
+                        <td class="py-2.5 px-4 text-sm text-center font-medium text-blue-700">+${(r.matchedCount || 0).toLocaleString()}건</td>
+                        <td class="py-2.5 px-4 text-center">${weekTypeBadge(r.weekType)}</td>
+                        <td class="py-2.5 px-4 text-center">
+                            <button onclick="app.deleteUploadRecord('${r.id}')" class="text-xs text-red-500 hover:text-red-700 font-medium border border-red-200 hover:border-red-400 px-2 py-1 rounded transition-colors">
+                                삭제
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+
+            return `
+                <div class="glass-panel rounded-xl border border-gray-100 shadow-sm mb-6 overflow-hidden">
+                    <div class="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
+                        <span class="font-bold text-sm text-gray-800">${weekName}</span>
+                        <span class="text-xs text-gray-500">총 매칭 ${totalMatched.toLocaleString()}건 · ${records.length}회 업로드</span>
+                    </div>
+                    <table class="w-full">
+                        <thead>
+                            <tr class="text-xs text-gray-400 border-b border-gray-100">
+                                <th class="py-2 px-4 text-left">플랫폼</th>
+                                <th class="py-2 px-4 text-left">업로드 일시</th>
+                                <th class="py-2 px-4 text-left">파일명</th>
+                                <th class="py-2 px-4 text-center">스캔</th>
+                                <th class="py-2 px-4 text-center">매칭</th>
+                                <th class="py-2 px-4 text-center">구분</th>
+                                <th class="py-2 px-4 text-center">삭제</th>
+                            </tr>
+                        </thead>
+                        <tbody>${recordRows}</tbody>
+                    </table>
+                </div>`;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-lg text-sm text-yellow-800">
+                <strong>삭제 주의:</strong> 업로드 이력을 삭제하면 해당 업로드로 추가된 배달 건수가 차감됩니다. 정산 금액이 변경될 수 있습니다.
+            </div>
+            ${rows}
+        `;
+        lucide.createIcons();
+    },
+
+    deleteUploadRecord(uploadId) {
+        if (!confirm('이 업로드 이력을 삭제하면 해당 배달 건수가 차감됩니다.\n정말 삭제하시겠습니까?')) return;
+        const ok = db.deleteUpload(uploadId, SettlementEngine);
+        if (ok) {
+            alert('삭제되었습니다. 배달 건수가 차감되었습니다.');
+            this.renderUploadHistory(document.getElementById('app-content'));
+        } else {
+            alert('삭제에 실패했습니다.');
+        }
     },
 
     renderAdmin(container) {
@@ -1844,7 +1950,33 @@ const app = {
             return;
         }
 
-        const files = Array.from(fileInput.files);
+        // 주차 결정 (중복 체크에 필요)
+        const targetPeriodEl = document.querySelector('input[name="target-period"]:checked');
+        const targetPeriodVal = targetPeriodEl ? targetPeriodEl.value : 'current';
+        const pastWeekNameVal = document.getElementById('past-settlement-select').value;
+        const targetWeekName = targetPeriodVal === 'current' ? db.getCurrentWeekName() : pastWeekNameVal;
+
+        // 중복 파일 감지: 같은 플랫폼 + 같은 주차에 이미 업로드된 파일명 제외
+        const existingUploads = db.getUploadHistory();
+        const allFiles = Array.from(fileInput.files);
+        const duplicateNames = [];
+        const files = allFiles.filter(f => {
+            const isDup = existingUploads.some(u =>
+                u.platform === platform &&
+                u.weekName === targetWeekName &&
+                u.filenames && u.filenames.includes(f.name)
+            );
+            if (isDup) duplicateNames.push(f.name);
+            return !isDup;
+        });
+
+        if (duplicateNames.length > 0 && files.length === 0) {
+            alert(`이미 업로드된 파일입니다:\n${duplicateNames.join('\n')}\n\n삭제 후 다시 업로드하거나 다른 파일을 선택하세요.`);
+            return;
+        }
+        if (duplicateNames.length > 0) {
+            alert(`중복 파일 제외됨:\n${duplicateNames.join('\n')}\n\n나머지 ${files.length}개 파일만 처리합니다.`);
+        }
         
         // ADMIN UPLOAD: Fetch ALL members across ALL guilds for global matching
         const allActiveMembers = db.getMembers(); 
@@ -1860,40 +1992,76 @@ const app = {
 
         try {
             const result = await ExcelParser.parseMultipleFiles(files, platform, allActiveMembers);
-            
-            // Determine target: current or past
-            const targetPeriod = document.querySelector('input[name="target-period"]:checked').value;
-            const pastWeekName = document.getElementById('past-settlement-select').value;
 
-            if (targetPeriod === 'current') {
-                // ADD TO CURRENT COUNTERS
+            // 업로드 이력 레코드 준비
+            const uploadRecord = {
+                id: 'UPL' + Date.now(),
+                platform,
+                weekType: targetPeriodVal,
+                weekName: targetWeekName,
+                uploadedAt: new Date().toISOString(),
+                filenames: files.map(f => f.name),
+                totalRows: result.totalRowsProcessed,
+                matchedCount: result.matchedDeliveries,
+                memberDeliveries: result.memberDeliveries
+            };
+
+            if (targetPeriodVal === 'current') {
+                // ADD TO CURRENT COUNTERS — 이력 포함 saveData 1회
+                const data = db.getData();
                 for (const [memberId, count] of Object.entries(result.memberDeliveries)) {
-                    db.addDeliveriesToMember(memberId, count);
+                    const member = data.members.find(m => m.id === memberId);
+                    if (member) member.deliveries = (member.deliveries || 0) + count;
                 }
+                if (!data.uploadHistory) data.uploadHistory = [];
+                data.uploadHistory.push(uploadRecord);
+                db.saveData(data);
             } else {
-                // UPDATE FINALIZED SETTLEMENTS
-                // Since an excel might have members from multiple guilds, we need to split result.memberDeliveries by guild
+                // UPDATE FINALIZED SETTLEMENTS (소급 적용) + 이력 저장 — saveData 1회
                 const guilds = db.getGuilds();
                 const members = db.getMembers();
-                const settlements = db.getAllSettlements().filter(s => s.weekName === pastWeekName);
+                const settlements = db.getAllSettlements().filter(s => s.weekName === targetWeekName);
+                const data = db.getData();
+                let updatedGuildNames = [];
 
                 guilds.forEach(guild => {
                     const targetSettlement = settlements.find(s => s.guildId === guild.id);
-                    if (targetSettlement) {
-                        // Extract only members belonging to this guild from the parsing result
-                        const guildMemberDeliveries = {};
-                        for (const [mId, count] of Object.entries(result.memberDeliveries)) {
-                            const m = members.find(x => x.id === mId);
-                            if (m && m.guildId === guild.id) {
-                                guildMemberDeliveries[mId] = count;
-                            }
-                        }
-                        
-                        if (Object.keys(guildMemberDeliveries).length > 0) {
-                            db.addDataToSettlement(targetSettlement.id, guildMemberDeliveries, SettlementEngine);
+                    if (!targetSettlement) return;
+
+                    const guildMemberDeliveries = {};
+                    for (const [mId, count] of Object.entries(result.memberDeliveries)) {
+                        const m = members.find(x => x.id === mId);
+                        if (m && m.guildId === guild.id) guildMemberDeliveries[mId] = count;
+                    }
+                    if (Object.keys(guildMemberDeliveries).length === 0) return;
+
+                    const s = data.settlements.find(x => x.id === targetSettlement.id);
+                    if (!s) return;
+                    if (!s.memberStats) s.memberStats = [];
+                    for (const [mId, count] of Object.entries(guildMemberDeliveries)) {
+                        const stat = s.memberStats.find(ms => ms.id === mId);
+                        if (stat) {
+                            stat.deliveries += count;
+                        } else {
+                            const member = data.members.find(m => m.id === mId);
+                            s.memberStats.push({ id: mId, name: member ? member.name : 'Unknown', deliveries: count });
                         }
                     }
+                    s.totalDeliveries = s.memberStats.reduce((sum, ms) => sum + ms.deliveries, 0);
+                    const calcResult = SettlementEngine.calculateSettlement(s.memberCount, s.totalDeliveries, guild.customTiers, guild.customRule);
+                    s.tier = calcResult.tier;
+                    s.recognizedDeliveries = calcResult.recognizedDeliveries;
+                    s.chunks = calcResult.chunks;
+                    s.totalAmount = calcResult.totalAmount;
+                    updatedGuildNames.push(`${guild.name} (+${Object.values(guildMemberDeliveries).reduce((a,b)=>a+b,0)}건)`);
                 });
+
+                if (!data.uploadHistory) data.uploadHistory = [];
+                data.uploadHistory.push(uploadRecord);
+                db.saveData(data);
+
+                result._pastUpdated = updatedGuildNames;
+                result._pastWeekName = targetWeekName;
             }
 
             let unmatchedHtml = '';
@@ -1908,6 +2076,20 @@ const app = {
                     </div>
                 `;
             }
+
+            const pastUpdateHtml = result._pastUpdated && result._pastUpdated.length > 0 ? `
+                <div class="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
+                    <p class="text-sm font-bold text-green-800 mb-2">✅ 소급 반영된 길드 (${result._pastWeekName})</p>
+                    <ul class="text-xs text-green-700 list-disc pl-5">
+                        ${result._pastUpdated.map(g => `<li>${g}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : (result._pastUpdated !== undefined ? `
+                <div class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p class="text-sm font-bold text-yellow-800">⚠️ 소급 반영된 길드 없음</p>
+                    <p class="text-xs text-yellow-700 mt-1">선택한 주차(${result._pastWeekName})에 매칭되는 길드원 데이터가 없습니다.<br>엑셀의 이름/ID가 등록된 길드원 정보와 일치하는지 확인하세요.</p>
+                </div>
+            ` : '');
 
             resultBox.innerHTML = `
                 <div class="glass-panel p-6 rounded-xl border-l-4 border-l-green-500 shadow-sm">
@@ -1925,6 +2107,7 @@ const app = {
                             <span class="font-bold text-blue-900 text-lg">+${result.matchedDeliveries}건 기존 데이터에 누적됨</span>
                         </div>
                     </div>
+                    ${pastUpdateHtml}
                     ${unmatchedHtml}
                     <div class="mt-6 flex justify-end">
                         <button onclick="app.navigate('admin-overview')" class="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700">전체 길드 현황 보기</button>
