@@ -33,79 +33,35 @@ const db = {
 
     async loadFromServer() {
         try {
-            // 1. 서버(Firebase)와 로컬(LocalStorage) 데이터 모두 가져오기
+            // Firebase가 항상 정답 (단일 진실의 원천)
+            // localStorage는 Firebase 접속 실패 시 오프라인 백업으로만 사용
             const response = await fetch(this._firebaseUrl);
             const cloudData = await response.json();
-            const localDataStr = localStorage.getItem(this._key);
-            const localData = localDataStr ? JSON.parse(localDataStr) : null;
 
-            // 2. dataVersion(저장 시각)을 기준으로 더 최근 쪽을 primary로 결정
-            //    버전이 같거나 로컬이 더 크면 → 로컬 우선
-            //    (로컬 저장은 동기식 → Firebase PUT보다 항상 먼저 완료되므로 로컬이 더 최신)
-            const cloudVersion = (cloudData && cloudData.dataVersion) ? cloudData.dataVersion : 0;
-            const localVersion = (localData && localData.dataVersion) ? localData.dataVersion : 0;
-
-            const localIsPrimary = (localVersion >= cloudVersion);
-            const primary = localIsPrimary ? localData : cloudData;
-            const secondary = localIsPrimary ? cloudData : localData;
-
-            let finalData;
-            if (primary) {
-                finalData = { ...this._defaultData, ...primary };
-
-                // 길드: primary 기준 (삭제/생성 즉시 반영, 삭제된 길드 되살리기 방지)
-                finalData.guilds = primary.guilds ? [...primary.guilds] : [...this._defaultData.guilds];
-
-                // 멤버: 양쪽 누적 병합 — Firebase PUT 비동기 완료 전 새로고침으로 인한 데이터 소실 방지
-                const allMembers = [...(primary.members || [])];
-                if (secondary && secondary.members) {
-                    secondary.members.forEach(m => {
-                        if (!allMembers.find(am => am.id === m.id)) allMembers.push(m);
-                    });
-                }
-                // 존재하는 길드 소속 멤버만 유지 (삭제된 길드의 멤버 정리)
-                const validGuildIds = new Set(finalData.guilds.map(g => g.id));
-                finalData.members = allMembers.filter(m => validGuildIds.has(m.guildId));
-
-                // 정산 내역: 양쪽 누적 병합
-                const allSettlements = [...(primary.settlements || [])];
-                if (secondary && secondary.settlements) {
-                    secondary.settlements.forEach(s => {
-                        if (!allSettlements.find(as => as.id === s.id)) allSettlements.push(s);
-                    });
-                }
-                finalData.settlements = allSettlements;
-
-                // 등록 이력: 양쪽 누적 병합
-                const allHistory = [...(primary.registrationHistory || [])];
-                if (secondary && secondary.registrationHistory) {
-                    secondary.registrationHistory.forEach(h => {
-                        const exists = allHistory.find(ah =>
-                            ah.timestamp === h.timestamp && ah.type === h.type && ah.guildId === h.guildId
-                        );
-                        if (!exists) allHistory.push(h);
-                    });
-                }
-                finalData.registrationHistory = allHistory;
-            } else if (secondary) {
-                finalData = { ...this._defaultData, ...secondary };
+            if (cloudData && cloudData.guilds && cloudData.guilds.length > 0) {
+                // Firebase 데이터가 정상이면 그대로 사용 — 절대 로컬로 덮어쓰지 않음
+                this._memoryData = { ...this._defaultData, ...cloudData };
+                // 로컬 캐시 갱신 (오프라인 대비)
+                localStorage.setItem(this._key, JSON.stringify(this._memoryData));
             } else {
-                finalData = { ...this._defaultData };
-            }
-
-            this._memoryData = finalData;
-
-            // 3. 병합 결과를 양쪽에 동기화 (dataVersion은 유지)
-            localStorage.setItem(this._key, JSON.stringify(this._memoryData));
-            if (this._memoryData.guilds && this._memoryData.guilds.length > 0) {
-                fetch(this._firebaseUrl, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(this._memoryData)
-                }).catch(e => console.error('Firebase sync on load failed:', e));
+                // Firebase가 비어 있으면 로컬 백업에서 복구 후 Firebase에 올리기
+                const localDataStr = localStorage.getItem(this._key);
+                const localData = localDataStr ? JSON.parse(localDataStr) : null;
+                if (localData && localData.guilds && localData.guilds.length > 0) {
+                    this._memoryData = { ...this._defaultData, ...localData };
+                    // 로컬 데이터를 Firebase에 복구
+                    fetch(this._firebaseUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this._memoryData)
+                    }).catch(e => console.error('Firebase recovery upload failed:', e));
+                } else {
+                    this._memoryData = { ...this._defaultData };
+                }
             }
         } catch (e) {
-            console.error('Data load failed, falling back to local storage:', e);
+            // Firebase 접속 실패 → 로컬 캐시로 오프라인 동작
+            console.error('Firebase unreachable, using local cache:', e);
             const localDataStr = localStorage.getItem(this._key);
             if (localDataStr) {
                 this._memoryData = { ...this._defaultData, ...JSON.parse(localDataStr) };
