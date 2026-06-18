@@ -777,11 +777,71 @@ const app = {
     renderUploadHistory(container) {
         if (this.state.currentUser.role !== 'admin') return;
 
+        const uploadHistory = db.getUploadHistory().slice().reverse(); // 최신순
         const allSettlements = db.getAllSettlements();
-        const uploadHistory = db.getUploadHistory();
         const guilds = db.getGuilds();
 
-        // ── 정산 데이터를 주차별로 그룹화 (최신 순) ──
+        const pbadge = p => p === 'baemin'
+            ? '<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-teal-100 text-teal-800">배민</span>'
+            : '<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800">쿠팡</span>';
+
+        // ══ 섹션 1: 업로드된 엑셀 파일 목록 ══
+        let section1Html;
+        if (uploadHistory.length === 0) {
+            section1Html = `
+                <div class="text-center py-8 text-gray-400 bg-gray-50 rounded-xl border border-gray-100">
+                    <i data-lucide="file-x" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+                    <p class="text-sm">업로드 이력이 없습니다.</p>
+                    <p class="text-xs mt-1">엑셀 정산 업로드 메뉴에서 파일을 업로드하면 여기에 기록됩니다.</p>
+                </div>`;
+        } else {
+            const uploadRows = uploadHistory.map(r => {
+                const dt = new Date(r.uploadedAt);
+                const dtStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+                const fileList = (r.filenames || []).join(', ') || '-';
+                const weekTypeLabel = r.weekType === 'current'
+                    ? '<span class="text-blue-600 text-xs">현재주차</span>'
+                    : '<span class="text-gray-500 text-xs">소급</span>';
+                return `
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">${pbadge(r.platform)}</td>
+                        <td class="py-3 px-4 text-xs text-gray-500">${dtStr}</td>
+                        <td class="py-3 px-4 text-xs text-gray-700 max-w-xs">
+                            <div class="truncate" title="${fileList}">${fileList}</div>
+                            <div class="text-gray-400 mt-0.5">${r.weekName || '-'} · ${weekTypeLabel}</div>
+                        </td>
+                        <td class="py-3 px-4 text-center text-sm text-gray-600">${(r.totalRows||0).toLocaleString()}행</td>
+                        <td class="py-3 px-4 text-center">
+                            <span class="font-semibold text-blue-700">+${(r.matchedCount||0).toLocaleString()}건</span>
+                        </td>
+                        <td class="py-3 px-4 text-center">
+                            <button onclick="app.deleteUploadRecord('${r.id}')"
+                                class="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 hover:border-red-400 transition-colors">
+                                삭제
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+
+            section1Html = `
+                <div class="glass-panel rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr class="text-xs text-gray-500 border-b border-gray-200">
+                                <th class="py-2.5 px-4 text-left">플랫폼</th>
+                                <th class="py-2.5 px-4 text-left">업로드 일시</th>
+                                <th class="py-2.5 px-4 text-left">파일명 / 주차</th>
+                                <th class="py-2.5 px-4 text-center">스캔 행수</th>
+                                <th class="py-2.5 px-4 text-center">매칭 건수</th>
+                                <th class="py-2.5 px-4 text-center">삭제</th>
+                            </tr>
+                        </thead>
+                        <tbody>${uploadRows}</tbody>
+                    </table>
+                </div>`;
+        }
+
+        // ══ 섹션 2: 주차별 정산 데이터 현황 (초기화) ══
         const weekMap = {};
         allSettlements.forEach(s => {
             if (!weekMap[s.weekName]) weekMap[s.weekName] = [];
@@ -789,126 +849,88 @@ const app = {
         });
         const sortedWeeks = Object.keys(weekMap).sort((a, b) => b.localeCompare(a));
 
-        // ── 추적 업로드 이력을 주차별로 그룹화 ──
-        const histMap = {};
-        uploadHistory.forEach(r => {
-            const key = r.weekName || '주차 미지정';
-            if (!histMap[key]) histMap[key] = [];
-            histMap[key].push(r);
-        });
-        Object.values(histMap).forEach(arr => arr.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)));
-
-        const pbadge = p => p === 'baemin'
-            ? '<span class="px-1.5 py-0.5 rounded text-xs font-bold bg-teal-100 text-teal-800">배민</span>'
-            : '<span class="px-1.5 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800">쿠팡</span>';
-
-        if (sortedWeeks.length === 0) {
-            container.innerHTML = `<div class="glass-panel p-12 rounded-xl text-center text-gray-400">
-                <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-4 opacity-40"></i>
-                <p>정산 데이터가 없습니다.</p></div>`;
-            lucide.createIcons();
-            return;
-        }
-
         const weekCards = sortedWeeks.map(weekName => {
             const settlements = weekMap[weekName];
-            const trackedUploads = histMap[weekName] || [];
-            const hasAnyData = settlements.some(s => s.totalDeliveries > 0);
+            const hasData = settlements.some(s => s.totalDeliveries > 0);
 
-            // 길드별 정산 행
-            const settlementRows = settlements.map(s => {
+            const rows = settlements.map(s => {
                 const guild = guilds.find(g => g.id === s.guildId);
                 const gName = guild ? guild.name : s.guildId;
-                const dataCount = (s.memberStats || []).filter(ms => ms.deliveries > 0).length;
+                const dataMembers = (s.memberStats || []).filter(ms => ms.deliveries > 0).length;
                 const delivStr = s.totalDeliveries > 0
                     ? `<span class="font-semibold text-green-700">${s.totalDeliveries.toLocaleString()}건</span>`
-                    : `<span class="text-gray-300">0건</span>`;
+                    : `<span class="text-gray-300">-</span>`;
                 const amtStr = s.totalAmount > 0 ? s.totalAmount.toLocaleString() + '원' : '-';
-                const resetBtn = s.totalDeliveries > 0
+                const btn = s.totalDeliveries > 0
                     ? `<button onclick="app.resetSettlementData('${s.id}')"
-                          class="text-xs text-orange-500 hover:text-orange-700 border border-orange-200 hover:border-orange-400 px-2 py-1 rounded transition-colors">
-                          초기화
+                           class="px-2 py-1 text-xs font-medium text-orange-600 border border-orange-200 rounded-lg hover:bg-orange-50 hover:border-orange-400 transition-colors">
+                           초기화
                        </button>`
                     : `<span class="text-xs text-gray-200">-</span>`;
                 return `
                     <tr class="border-b border-gray-50 hover:bg-gray-50">
                         <td class="py-2 px-4 text-sm text-gray-800">${gName}</td>
                         <td class="py-2 px-4 text-center text-sm">${delivStr}</td>
-                        <td class="py-2 px-4 text-center text-xs text-gray-500">${dataCount}명</td>
+                        <td class="py-2 px-4 text-center text-xs text-gray-500">${dataMembers > 0 ? dataMembers + '명' : '-'}</td>
                         <td class="py-2 px-4 text-right text-xs text-gray-600">${amtStr}</td>
-                        <td class="py-2 px-4 text-center">${resetBtn}</td>
+                        <td class="py-2 px-4 text-center">${btn}</td>
                     </tr>`;
             }).join('');
 
-            // 추적된 업로드 이력 행
-            const histRows = trackedUploads.length > 0 ? `
-                <tr>
-                    <td colspan="5" class="px-4 pt-3 pb-2 bg-blue-50 border-t border-blue-100">
-                        <p class="text-xs font-bold text-blue-700 mb-1.5">
-                            <i data-lucide="clock" class="w-3 h-3 inline-block mr-1"></i>추적된 업로드 이력 (${trackedUploads.length}건)
-                        </p>
-                        ${trackedUploads.map(r => {
-                            const dt = new Date(r.uploadedAt);
-                            const dtStr = `${dt.getMonth()+1}/${dt.getDate()} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-                            const files = (r.filenames || []).join(', ') || '-';
-                            const weekTypeLabel = r.weekType === 'current' ? '현재주차' : '소급';
-                            return `<div class="flex items-center justify-between py-0.5 text-xs text-gray-600">
-                                <span>${pbadge(r.platform)} ${dtStr} · <span class="text-blue-600 font-medium">+${(r.matchedCount||0)}건</span> · [${weekTypeLabel}] · ${files}</span>
-                                <button onclick="app.deleteUploadRecord('${r.id}')"
-                                    class="ml-3 text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-0.5 rounded transition-colors">
-                                    삭제
-                                </button>
-                            </div>`;
-                        }).join('')}
-                    </td>
-                </tr>` : '';
-
-            const headerBadge = hasAnyData
-                ? '<span class="text-xs text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded-full">데이터 있음</span>'
+            const statusBadge = hasData
+                ? '<span class="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">데이터 있음</span>'
                 : '<span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">데이터 없음</span>';
 
             return `
-                <div class="glass-panel rounded-xl border border-gray-100 shadow-sm mb-5 overflow-hidden">
+                <div class="glass-panel rounded-xl border border-gray-100 shadow-sm mb-4 overflow-hidden">
                     <div class="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
                         <span class="font-bold text-sm text-gray-800">${weekName}</span>
-                        <div class="flex items-center gap-2">
-                            ${headerBadge}
-                            ${trackedUploads.length > 0 ? `<span class="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">업로드 ${trackedUploads.length}회</span>` : ''}
-                        </div>
+                        ${statusBadge}
                     </div>
                     <table class="w-full">
                         <thead>
                             <tr class="text-xs text-gray-400 border-b border-gray-100">
                                 <th class="py-2 px-4 text-left">길드</th>
                                 <th class="py-2 px-4 text-center">배달건수</th>
-                                <th class="py-2 px-4 text-center">데이터 인원</th>
+                                <th class="py-2 px-4 text-center">인원</th>
                                 <th class="py-2 px-4 text-right">정산금액</th>
                                 <th class="py-2 px-4 text-center">초기화</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            ${settlementRows}
-                            ${histRows}
-                        </tbody>
+                        <tbody>${rows}</tbody>
                     </table>
                 </div>`;
         }).join('');
 
         container.innerHTML = `
-            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-lg text-sm text-yellow-800">
-                <strong>초기화:</strong> 중복 업로드 등으로 건수가 잘못된 경우 해당 길드 행의 <strong>[초기화]</strong> 버튼으로 0으로 리셋 후 올바른 엑셀을 다시 업로드하세요.<br>
-                <strong>추적 이력 삭제:</strong> 이력 삭제는 해당 업로드로 누적된 배달 건수를 차감합니다.
+            <!-- 섹션 1 -->
+            <div class="mb-8">
+                <h3 class="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <i data-lucide="file-spreadsheet" class="w-5 h-5 text-teal-600"></i>
+                    업로드된 엑셀 파일 목록
+                    <span class="text-xs font-normal text-gray-400 ml-1">— 삭제 시 해당 배달 건수 차감</span>
+                </h3>
+                ${section1Html}
             </div>
-            ${weekCards}
+
+            <!-- 섹션 2 -->
+            <div>
+                <h3 class="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <i data-lucide="calendar" class="w-5 h-5 text-blue-600"></i>
+                    주차별 정산 데이터 현황
+                    <span class="text-xs font-normal text-gray-400 ml-1">— 중복 등 잘못된 데이터는 [초기화] 후 재업로드</span>
+                </h3>
+                ${weekCards || '<div class="text-center py-8 text-gray-400">정산 데이터가 없습니다.</div>'}
+            </div>
         `;
         lucide.createIcons();
     },
 
     resetSettlementData(settlementId) {
-        if (!confirm('이 정산의 배달 건수를 0으로 초기화하시겠습니까?\n초기화 후 올바른 엑셀을 다시 업로드하세요.')) return;
+        if (!confirm('이 길드의 배달 건수를 0으로 초기화하시겠습니까?\n초기화 후 올바른 엑셀을 다시 업로드하세요.')) return;
         const ok = db.resetSettlementDeliveries(settlementId, SettlementEngine);
         if (ok) {
-            alert('초기화 완료. 올바른 엑셀 파일을 다시 업로드해주세요.');
+            alert('초기화 완료. 엑셀 업로드 메뉴에서 올바른 파일을 다시 업로드하세요.');
             this.renderUploadHistory(document.getElementById('app-content'));
         } else {
             alert('초기화 실패.');
@@ -916,13 +938,13 @@ const app = {
     },
 
     deleteUploadRecord(uploadId) {
-        if (!confirm('이 업로드 이력을 삭제하면 해당 업로드로 추가된 배달 건수가 차감됩니다.\n정말 삭제하시겠습니까?')) return;
+        if (!confirm('이 업로드를 삭제하면 해당 파일로 추가된 배달 건수가 차감됩니다.\n정말 삭제하시겠습니까?')) return;
         const ok = db.deleteUpload(uploadId, SettlementEngine);
         if (ok) {
-            alert('삭제되었습니다. 배달 건수가 차감되었습니다.');
+            alert('삭제 완료. 해당 배달 건수가 차감되었습니다.');
             this.renderUploadHistory(document.getElementById('app-content'));
         } else {
-            alert('삭제에 실패했습니다.');
+            alert('삭제 실패.');
         }
     },
 
