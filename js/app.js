@@ -1033,7 +1033,10 @@ const app = {
                     <td class="py-3 px-4 text-sm font-medium text-primary-700 text-center">${displayTier}</td>
                     <td class="py-3 px-4 text-sm text-right font-bold text-gray-900">${settlement.totalAmount.toLocaleString()}원</td>
                     <td class="py-3 px-4 text-sm text-center">
-                        <div class="flex items-center justify-center space-x-2">
+                        <div class="flex items-center justify-center flex-wrap gap-1">
+                            <button onclick="app.showAdminBulkUploadModal('${g.id}', '${g.name.replace(/'/g, "\\'")}')" class="px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 font-bold text-xs flex items-center transition-colors">
+                                <i data-lucide="upload" class="w-3 h-3 mr-1"></i> 일괄등록
+                            </button>
                             <button onclick="app.switchToGuild('${g.id}')" class="px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 font-bold text-xs flex items-center transition-colors">
                                 <i data-lucide="log-in" class="w-3 h-3 mr-1"></i> 접속
                             </button>
@@ -1980,9 +1983,10 @@ const app = {
         XLSX.writeFile(wb, '길드원_등록양식.xlsx');
     },
 
-    // ── 일괄 등록 모달 열기 ──
+    // ── 일괄 등록 모달 열기 (GM 전용) ──
     showBulkUploadModal() {
         this.state._bulkParsedMembers = [];
+        this.state._bulkTargetGuildId = this.state.currentUser.id;
         document.getElementById('bulk-file-input').value = '';
         document.getElementById('bulk-preview-area').classList.add('hidden');
         document.getElementById('bulk-confirm-btn').disabled = true;
@@ -1990,11 +1994,37 @@ const app = {
         if (window.lucide) lucide.createIcons();
     },
 
-    // ── 파일 파싱 및 미리보기 렌더링 ──
+    // ── 파일 파싱 및 미리보기 (GM 전용 — 공통 메서드 사용) ──
     handleBulkUploadFile(event) {
         const file = event.target.files[0];
         if (!file) return;
+        this._parseBulkFileIntoPreview(file, this.state._bulkTargetGuildId, {
+            tbody: 'bulk-preview-tbody',
+            count: 'bulk-preview-count',
+            preview: 'bulk-preview-area',
+            confirmBtn: 'bulk-confirm-btn',
+        });
+    },
 
+    // ── 일괄 등록 실행 (GM 전용) ──
+    confirmBulkUpload() {
+        const members = this.state._bulkParsedMembers;
+        if (!members || members.length === 0) return;
+
+        const guildId = this.state._bulkTargetGuildId || this.state.currentUser.id;
+        const result = db.bulkAddMembers(guildId, members);
+
+        document.getElementById('bulk-upload-modal').classList.add('hidden');
+
+        let msg = `${result.added}명이 등록되었습니다.`;
+        if (result.skipped.length > 0) msg += `\n\n인원 초과로 미등록:\n${result.skipped.join('\n')}`;
+        alert(msg);
+
+        this.renderMembers(document.getElementById('app-content'));
+    },
+
+    // ── 공통: 엑셀 파일 → 파싱 → 미리보기 렌더링 ──
+    _parseBulkFileIntoPreview(file, guildId, ids) {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
@@ -2002,24 +2032,21 @@ const app = {
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-                // 첫 행을 헤더로 간주하고 나머지를 데이터로 처리
-                const dataRows = rows.slice(1).filter(r => String(r[0] || '').trim());
-
-                const parsed = dataRows.map(r => ({
-                    name: String(r[0] || '').trim(),
-                    baeminId: String(r[1] || '').trim(),
-                    coupangPhone: String(r[2] || '').trim(),
-                    memo: String(r[3] || '').trim(),
-                })).filter(m => m.name);
+                const parsed = rows.slice(1)
+                    .filter(r => String(r[0] || '').trim())
+                    .map(r => ({
+                        name: String(r[0] || '').trim(),
+                        baeminId: String(r[1] || '').trim(),
+                        coupangPhone: String(r[2] || '').trim(),
+                        memo: String(r[3] || '').trim(),
+                    }));
 
                 this.state._bulkParsedMembers = parsed;
 
-                // 미리보기 테이블 렌더링
-                const tbody = document.getElementById('bulk-preview-tbody');
-                const guildId = this.state.currentUser.id;
                 const existing = db.getMembers(guildId);
                 const existingNames = new Set(existing.map(m => m.name.replace(/\s/g, '')));
 
+                const tbody = document.getElementById(ids.tbody);
                 tbody.innerHTML = parsed.map((m, i) => {
                     const dup = existingNames.has(m.name.replace(/\s/g, ''));
                     const warn = !m.baeminId && !m.coupangPhone;
@@ -2039,10 +2066,10 @@ const app = {
                 }).join('');
 
                 const dupCount = parsed.filter(m => existingNames.has(m.name.replace(/\s/g, ''))).length;
-                document.getElementById('bulk-preview-count').textContent =
-                    `총 ${parsed.length}명 파싱됨${dupCount > 0 ? ` (중복 ${dupCount}명 포함 — 중복도 등록됩니다)` : ''}`;
-                document.getElementById('bulk-preview-area').classList.remove('hidden');
-                document.getElementById('bulk-confirm-btn').disabled = parsed.length === 0;
+                document.getElementById(ids.count).textContent =
+                    `총 ${parsed.length}명 파싱됨${dupCount > 0 ? ` (중복 ${dupCount}명 포함)` : ''}`;
+                document.getElementById(ids.preview).classList.remove('hidden');
+                document.getElementById(ids.confirmBtn).disabled = parsed.length === 0;
                 if (window.lucide) lucide.createIcons();
             } catch (err) {
                 alert('파일 파싱 실패: ' + err.message);
@@ -2051,21 +2078,101 @@ const app = {
         reader.readAsArrayBuffer(file);
     },
 
-    // ── 일괄 등록 실행 ──
-    confirmBulkUpload() {
+    // ── 어드민: 길드 선택 후 일괄 등록 모달 열기 ──
+    showAdminBulkUploadModal(guildId, guildName) {
+        this.state._bulkTargetGuildId = guildId;
+        this.state._bulkParsedMembers = [];
+
+        const existing = document.getElementById('admin-bulk-modal');
+        if (existing) existing.remove();
+
+        const wrap = document.createElement('div');
+        wrap.id = 'admin-bulk-modal';
+        wrap.innerHTML = `
+            <div class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-[9999] p-4">
+                <div class="glass-panel w-full max-w-2xl rounded-xl shadow-2xl flex flex-col max-h-[90vh]" style="background:rgba(255,255,255,0.97)">
+                    <div class="p-6 border-b border-gray-100">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-bold text-gray-800">
+                                <span class="text-green-600">${guildName}</span> — 길드원 일괄 등록
+                            </h3>
+                            <button onclick="document.getElementById('admin-bulk-modal').remove()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">엑셀 양식을 다운로드한 뒤 작성하여 업로드하세요. 이름 컬럼은 필수입니다.</p>
+                    </div>
+
+                    <div class="p-6 overflow-y-auto flex-1">
+                        <label for="admin-bulk-file-input" class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-green-50 hover:border-green-400 transition-colors">
+                            <i data-lucide="file-spreadsheet" class="w-8 h-8 text-gray-400 mb-2"></i>
+                            <span class="text-sm font-medium text-gray-600">클릭하여 파일 선택 <span class="text-gray-400 font-normal">또는 드래그 앤 드롭</span></span>
+                            <span class="text-xs text-gray-400 mt-1">.xlsx / .xls / .csv 지원</span>
+                            <input type="file" id="admin-bulk-file-input" accept=".xlsx,.xls,.csv" class="hidden" onchange="app.handleAdminBulkUploadFile(event)">
+                        </label>
+
+                        <div id="admin-bulk-preview-area" class="hidden mt-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <span id="admin-bulk-preview-count" class="text-sm font-semibold text-gray-700"></span>
+                                <button type="button" onclick="document.getElementById('admin-bulk-file-input').value=''; document.getElementById('admin-bulk-preview-area').classList.add('hidden'); document.getElementById('admin-bulk-confirm-btn').disabled=true;" class="text-xs text-gray-500 hover:text-red-500">다시 선택</button>
+                            </div>
+                            <div class="rounded-xl border border-gray-200 overflow-hidden">
+                                <div class="overflow-x-auto max-h-64">
+                                    <table class="w-full text-left text-sm">
+                                        <thead class="bg-gray-50 text-gray-500 text-xs uppercase sticky top-0">
+                                            <tr>
+                                                <th class="px-3 py-2">#</th>
+                                                <th class="px-3 py-2">이름</th>
+                                                <th class="px-3 py-2">배민커넥트ID</th>
+                                                <th class="px-3 py-2">쿠팡뒷자리</th>
+                                                <th class="px-3 py-2">메모</th>
+                                                <th class="px-3 py-2 text-center">상태</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="admin-bulk-preview-tbody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-gray-100 flex justify-between items-center">
+                        <button onclick="app.downloadMemberTemplate()" class="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-green-700 font-medium">
+                            <i data-lucide="download" class="w-4 h-4"></i> 양식 다운로드
+                        </button>
+                        <div class="flex gap-2">
+                            <button onclick="document.getElementById('admin-bulk-modal').remove()" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
+                            <button id="admin-bulk-confirm-btn" onclick="app.confirmAdminBulkUpload()" disabled class="px-5 py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed font-semibold">등록 확인</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+        if (window.lucide) lucide.createIcons();
+    },
+
+    handleAdminBulkUploadFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        this._parseBulkFileIntoPreview(file, this.state._bulkTargetGuildId, {
+            tbody: 'admin-bulk-preview-tbody',
+            count: 'admin-bulk-preview-count',
+            preview: 'admin-bulk-preview-area',
+            confirmBtn: 'admin-bulk-confirm-btn',
+        });
+    },
+
+    confirmAdminBulkUpload() {
         const members = this.state._bulkParsedMembers;
-        if (!members || members.length === 0) return;
+        const guildId = this.state._bulkTargetGuildId;
+        if (!members || members.length === 0 || !guildId) return;
 
-        const guildId = this.state.currentUser.id;
         const result = db.bulkAddMembers(guildId, members);
-
-        document.getElementById('bulk-upload-modal').classList.add('hidden');
+        document.getElementById('admin-bulk-modal').remove();
 
         let msg = `${result.added}명이 등록되었습니다.`;
         if (result.skipped.length > 0) msg += `\n\n인원 초과로 미등록:\n${result.skipped.join('\n')}`;
         alert(msg);
 
-        this.renderMembers(document.getElementById('app-content'));
+        this.renderAdmin(document.getElementById('app-content'));
     },
 
     showEditMemberModal(id) {
