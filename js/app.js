@@ -2586,12 +2586,10 @@ const app = {
                         const m = members.find(x => x.id === mId);
                         if (m && m.guildId === guild.id) guildMemberDeliveries[mId] = count;
                     }
-                    if (Object.keys(guildMemberDeliveries).length === 0) return;
 
+                    // 매칭 여부와 무관하게 정산 레코드가 없으면 항상 생성 (미정산 방지)
                     let s = data.settlements.find(x => x.guildId === guild.id && x.weekName === targetWeekName);
-
                     if (!s) {
-                        // 전주 정산 레코드 없음 → 신규 생성 (길드가 이번 주 새로 등록된 경우)
                         const approvedMembers = members.filter(m => m.guildId === guild.id && m.status === 'approved');
                         const newRec = {
                             id: 'S' + Date.now() + Math.floor(Math.random() * 1000),
@@ -2610,6 +2608,9 @@ const app = {
                         data.settlements.push(newRec);
                         s = newRec;
                     }
+
+                    // 매칭된 멤버 없으면 deliveries 업데이트 생략
+                    if (Object.keys(guildMemberDeliveries).length === 0) return;
 
                     if (!s.memberStats) s.memberStats = [];
                     for (const [mId, count] of Object.entries(guildMemberDeliveries)) {
