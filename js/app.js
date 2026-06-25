@@ -603,9 +603,17 @@ const app = {
                         </h3>
                         ${tierDescHtml}
                     </div>
-                    <button type="button" onclick="app.showAddMemberModal()" class="inline-flex items-center justify-center px-5 py-2.5 bg-primary-600 text-white text-sm font-bold rounded-xl hover:bg-primary-700 transition-all shadow-lg hover:shadow-primary-200 active:scale-95">
-                        <i data-lucide="plus" class="w-4 h-4 mr-2"></i> 길드원 직접 추가
-                    </button>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="app.downloadMemberTemplate()" class="inline-flex items-center justify-center px-4 py-2.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-200 transition-all border border-gray-200">
+                            <i data-lucide="download" class="w-4 h-4 mr-1.5"></i> 양식 다운로드
+                        </button>
+                        <button type="button" onclick="app.showBulkUploadModal()" class="inline-flex items-center justify-center px-4 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-xl hover:bg-green-700 transition-all shadow-md">
+                            <i data-lucide="upload" class="w-4 h-4 mr-1.5"></i> 엑셀 일괄 등록
+                        </button>
+                        <button type="button" onclick="app.showAddMemberModal()" class="inline-flex items-center justify-center px-4 py-2.5 bg-primary-600 text-white text-sm font-bold rounded-xl hover:bg-primary-700 transition-all shadow-lg hover:shadow-primary-200 active:scale-95">
+                            <i data-lucide="plus" class="w-4 h-4 mr-1.5"></i> 직접 추가
+                        </button>
+                    </div>
                 </div>
 
                 <div class="glass-panel rounded-xl border border-gray-200 overflow-hidden shadow-sm">
@@ -624,6 +632,71 @@ const app = {
                                 ${rows.length > 0 ? rows : `<tr><td colspan="5" class="text-center py-8 text-gray-400">등록된 길드원이 없습니다.</td></tr>`}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk Upload Modal -->
+            <div id="bulk-upload-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-50 p-4">
+                <div class="glass-panel w-full max-w-2xl rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+                    <div class="p-6 border-b border-gray-100">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                <i data-lucide="users" class="w-5 h-5 text-green-600"></i> 길드원 엑셀 일괄 등록
+                            </h3>
+                            <button type="button" onclick="document.getElementById('bulk-upload-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                                <i data-lucide="x" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">엑셀 양식을 다운로드한 뒤 작성하여 업로드하세요. 이름 컬럼은 필수입니다.</p>
+                    </div>
+
+                    <div class="p-6 overflow-y-auto flex-1">
+                        <!-- Upload Area -->
+                        <label id="bulk-drop-zone" for="bulk-file-input" class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-green-50 hover:border-green-400 transition-colors">
+                            <i data-lucide="file-spreadsheet" class="w-8 h-8 text-gray-400 mb-2"></i>
+                            <span class="text-sm font-medium text-gray-600">클릭하여 파일 선택 <span class="text-gray-400 font-normal">또는 드래그 앤 드롭</span></span>
+                            <span class="text-xs text-gray-400 mt-1">.xlsx / .xls / .csv 지원</span>
+                            <input type="file" id="bulk-file-input" accept=".xlsx,.xls,.csv" class="hidden" onchange="app.handleBulkUploadFile(event)">
+                        </label>
+
+                        <!-- Preview -->
+                        <div id="bulk-preview-area" class="hidden mt-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <span id="bulk-preview-count" class="text-sm font-semibold text-gray-700"></span>
+                                <button type="button" onclick="document.getElementById('bulk-file-input').value=''; document.getElementById('bulk-preview-area').classList.add('hidden'); document.getElementById('bulk-confirm-btn').disabled=true;" class="text-xs text-gray-500 hover:text-red-500">다시 선택</button>
+                            </div>
+                            <div class="rounded-xl border border-gray-200 overflow-hidden">
+                                <div class="overflow-x-auto max-h-64">
+                                    <table class="w-full text-left text-sm">
+                                        <thead class="bg-gray-50 text-gray-500 text-xs uppercase sticky top-0">
+                                            <tr>
+                                                <th class="px-3 py-2 font-bold">#</th>
+                                                <th class="px-3 py-2 font-bold">이름</th>
+                                                <th class="px-3 py-2 font-bold">배민커넥트ID</th>
+                                                <th class="px-3 py-2 font-bold">쿠팡뒷자리</th>
+                                                <th class="px-3 py-2 font-bold">메모</th>
+                                                <th class="px-3 py-2 font-bold text-center">상태</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="bulk-preview-tbody" class="divide-y divide-gray-100"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div id="bulk-error-area" class="hidden mt-2 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700"></div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-gray-100 flex justify-between items-center">
+                        <button type="button" onclick="app.downloadMemberTemplate()" class="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-green-700 font-medium">
+                            <i data-lucide="download" class="w-4 h-4"></i> 양식 다운로드
+                        </button>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="document.getElementById('bulk-upload-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
+                            <button type="button" id="bulk-confirm-btn" onclick="app.confirmBulkUpload()" disabled class="px-5 py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed font-semibold">
+                                등록 확인
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1891,6 +1964,108 @@ const app = {
     showAddMemberModal() {
         document.getElementById('add-member-form').reset();
         document.getElementById('add-modal').classList.remove('hidden');
+    },
+
+    // ── 엑셀 양식 다운로드 ──
+    downloadMemberTemplate() {
+        const wsData = [
+            ['이름', '배민커넥트ID', '쿠팡이츠뒷자리', '메모'],
+            ['홍길동', 'hong123', '1234', ''],
+            ['김철수', 'kim456,kim789', '5678,9012', '타명의 사용'],
+        ];
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [{ wch: 14 }, { wch: 24 }, { wch: 20 }, { wch: 20 }];
+        XLSX.utils.book_append_sheet(wb, ws, '길드원명단');
+        XLSX.writeFile(wb, '길드원_등록양식.xlsx');
+    },
+
+    // ── 일괄 등록 모달 열기 ──
+    showBulkUploadModal() {
+        this.state._bulkParsedMembers = [];
+        document.getElementById('bulk-file-input').value = '';
+        document.getElementById('bulk-preview-area').classList.add('hidden');
+        document.getElementById('bulk-confirm-btn').disabled = true;
+        document.getElementById('bulk-upload-modal').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    },
+
+    // ── 파일 파싱 및 미리보기 렌더링 ──
+    handleBulkUploadFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const wb = XLSX.read(e.target.result, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+                // 첫 행을 헤더로 간주하고 나머지를 데이터로 처리
+                const dataRows = rows.slice(1).filter(r => String(r[0] || '').trim());
+
+                const parsed = dataRows.map(r => ({
+                    name: String(r[0] || '').trim(),
+                    baeminId: String(r[1] || '').trim(),
+                    coupangPhone: String(r[2] || '').trim(),
+                    memo: String(r[3] || '').trim(),
+                })).filter(m => m.name);
+
+                this.state._bulkParsedMembers = parsed;
+
+                // 미리보기 테이블 렌더링
+                const tbody = document.getElementById('bulk-preview-tbody');
+                const guildId = this.state.currentUser.id;
+                const existing = db.getMembers(guildId);
+                const existingNames = new Set(existing.map(m => m.name.replace(/\s/g, '')));
+
+                tbody.innerHTML = parsed.map((m, i) => {
+                    const dup = existingNames.has(m.name.replace(/\s/g, ''));
+                    const warn = !m.baeminId && !m.coupangPhone;
+                    const badge = dup
+                        ? '<span class="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">중복</span>'
+                        : warn
+                        ? '<span class="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-bold">ID없음</span>'
+                        : '<span class="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">정상</span>';
+                    return `<tr class="hover:bg-gray-50 ${dup ? 'bg-orange-50' : ''}">
+                        <td class="px-3 py-2 text-gray-400 text-xs">${i + 1}</td>
+                        <td class="px-3 py-2 font-semibold text-gray-800">${m.name}</td>
+                        <td class="px-3 py-2 text-gray-600 font-mono text-xs">${m.baeminId || '-'}</td>
+                        <td class="px-3 py-2 text-gray-600 font-mono text-xs">${m.coupangPhone || '-'}</td>
+                        <td class="px-3 py-2 text-gray-500 text-xs">${m.memo || ''}</td>
+                        <td class="px-3 py-2 text-center">${badge}</td>
+                    </tr>`;
+                }).join('');
+
+                const dupCount = parsed.filter(m => existingNames.has(m.name.replace(/\s/g, ''))).length;
+                document.getElementById('bulk-preview-count').textContent =
+                    `총 ${parsed.length}명 파싱됨${dupCount > 0 ? ` (중복 ${dupCount}명 포함 — 중복도 등록됩니다)` : ''}`;
+                document.getElementById('bulk-preview-area').classList.remove('hidden');
+                document.getElementById('bulk-confirm-btn').disabled = parsed.length === 0;
+                if (window.lucide) lucide.createIcons();
+            } catch (err) {
+                alert('파일 파싱 실패: ' + err.message);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    },
+
+    // ── 일괄 등록 실행 ──
+    confirmBulkUpload() {
+        const members = this.state._bulkParsedMembers;
+        if (!members || members.length === 0) return;
+
+        const guildId = this.state.currentUser.id;
+        const result = db.bulkAddMembers(guildId, members);
+
+        document.getElementById('bulk-upload-modal').classList.add('hidden');
+
+        let msg = `${result.added}명이 등록되었습니다.`;
+        if (result.skipped.length > 0) msg += `\n\n인원 초과로 미등록:\n${result.skipped.join('\n')}`;
+        alert(msg);
+
+        this.renderMembers(document.getElementById('app-content'));
     },
 
     showEditMemberModal(id) {

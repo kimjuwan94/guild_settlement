@@ -31,54 +31,125 @@ const db = {
 
     _memoryData: null,
     _firebaseUrl: 'https://floche-gm-default-rtdb.firebaseio.com/data.json',
-    _serverDataLoaded: false, // Firebase 또는 로컬캐시에서 실제 데이터를 로드했는지 여부
+    _backupBaseUrl: 'https://floche-gm-default-rtdb.firebaseio.com/backup',
+    _serverDataLoaded: false,
+    _knownGuildIds: null,   // 이번 세션에서 확인된 길드 ID Set (손실 감지용)
+    _knownMemberIds: null,  // 이번 세션에서 확인된 멤버 ID Set (손실 감지용)
+    _intentionalDeletion: false, // deleteGuild/deleteMember 호출 시 true로 설정
 
     async loadFromServer() {
         this._serverDataLoaded = false;
         try {
-            // Firebase가 항상 정답 (단일 진실의 원천)
-            // localStorage는 Firebase 접속 실패 시 오프라인 백업으로만 사용
-            const response = await fetch(this._firebaseUrl);
-            const cloudData = await response.json();
+            // 메인 데이터와 백업을 동시에 로드
+            const [mainResult, backupResult] = await Promise.allSettled([
+                fetch(this._firebaseUrl).then(r => r.json()),
+                fetch(this._backupBaseUrl + '.json').then(r => r.json())
+            ]);
+
+            const cloudData = mainResult.status === 'fulfilled' ? mainResult.value : null;
+            const backupData = backupResult.status === 'fulfilled' ? backupResult.value : null;
 
             if (cloudData && cloudData.guilds && cloudData.guilds.length > 0) {
-                // Firebase 데이터가 정상이면 그대로 사용 — 절대 로컬로 덮어쓰지 않음
                 this._memoryData = { ...this._defaultData, ...cloudData };
+                // 백업 교차 검증: 백업에 있는 길드/멤버가 메인 데이터에 없으면 자동 복원
+                const restored = this._restoreFromBackup(this._memoryData, backupData);
+                if (restored) {
+                    // 복원된 내용을 Firebase 메인에도 반영
+                    fetch(this._firebaseUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this._memoryData)
+                    }).catch(e => console.error('Restore push failed:', e));
+                }
                 this._serverDataLoaded = true;
-                // 로컬 캐시 갱신 (오프라인 대비)
                 localStorage.setItem(this._key, JSON.stringify(this._memoryData));
             } else {
-                // Firebase가 비어 있으면 로컬 백업에서 복구 후 Firebase에 올리기
+                // 메인 Firebase 비어있음 → 로컬캐시 확인
                 const localDataStr = localStorage.getItem(this._key);
                 const localData = localDataStr ? JSON.parse(localDataStr) : null;
+
                 if (localData && localData.guilds && localData.guilds.length > 0) {
                     this._memoryData = { ...this._defaultData, ...localData };
                     this._serverDataLoaded = true;
-                    // 로컬 데이터를 Firebase에 복구
                     fetch(this._firebaseUrl, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(this._memoryData)
                     }).catch(e => console.error('Firebase recovery upload failed:', e));
+                } else if (backupData && backupData.guilds && Object.keys(backupData.guilds).length > 0) {
+                    // 메인·로컬 모두 없지만 백업 존재 → 백업에서 전체 복원
+                    const guilds = Object.values(backupData.guilds);
+                    const members = backupData.members ? Object.values(backupData.members) : [];
+                    console.warn('[RESTORE] 메인 데이터 없음. 백업에서 복원:', guilds.length, '개 길드,', members.length, '명 멤버');
+                    this._memoryData = { ...this._defaultData, guilds, members };
+                    this._serverDataLoaded = true;
+                    fetch(this._firebaseUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this._memoryData)
+                    }).catch(e => console.error('Backup restore push failed:', e));
                 } else {
-                    // Firebase도 비어있고 로컬캐시도 없음 — 기본값만 사용 (Firebase 덮어쓰기 금지)
+                    // 어디에도 데이터 없음 — 기본값 사용, Firebase 덮어쓰기 금지
                     this._memoryData = { ...this._defaultData };
                     this._serverDataLoaded = false;
                 }
             }
         } catch (e) {
-            // Firebase 접속 실패 → 로컬 캐시로 오프라인 동작
             console.error('Firebase unreachable, using local cache:', e);
             const localDataStr = localStorage.getItem(this._key);
             if (localDataStr) {
                 this._memoryData = { ...this._defaultData, ...JSON.parse(localDataStr) };
                 this._serverDataLoaded = true;
             } else {
-                // 네트워크 오류 + 로컬캐시 없음 — 기본값 사용, Firebase 덮어쓰기 절대 금지
                 this._memoryData = { ...this._defaultData };
                 this._serverDataLoaded = false;
             }
         }
+
+        // 로드 완료 후 알려진 ID 세트 초기화
+        this._knownGuildIds = new Set(this._memoryData.guilds.map(g => g.id));
+        this._knownMemberIds = new Set(this._memoryData.members.map(m => m.id));
+    },
+
+    // 백업 데이터로 메인 데이터의 누락 항목 복원. 복원 발생 시 true 반환.
+    _restoreFromBackup(mainData, backupData) {
+        if (!backupData) return false;
+        let restored = false;
+
+        if (backupData.guilds) {
+            const mainGuildIds = new Set(mainData.guilds.map(g => g.id));
+            Object.values(backupData.guilds).forEach(g => {
+                if (!mainGuildIds.has(g.id)) {
+                    console.warn('[RESTORE] 백업에서 길드 복원:', g.name);
+                    mainData.guilds.push(g);
+                    restored = true;
+                }
+            });
+        }
+
+        if (backupData.members) {
+            const mainMemberIds = new Set(mainData.members.map(m => m.id));
+            const currentGuildIds = new Set(mainData.guilds.map(g => g.id));
+            Object.values(backupData.members).forEach(m => {
+                if (!mainMemberIds.has(m.id) && currentGuildIds.has(m.guildId)) {
+                    console.warn('[RESTORE] 백업에서 멤버 복원:', m.name);
+                    mainData.members.push(m);
+                    restored = true;
+                }
+            });
+        }
+
+        return restored;
+    },
+
+    // 개별 길드/멤버를 백업 경로에 저장 (PUT → 해당 키만 덮어쓰므로 다른 데이터에 영향 없음)
+    _backupItem(type, item) {
+        // type: 'guilds' | 'members'
+        fetch(`${this._backupBaseUrl}/${type}/${item.id}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item)
+        }).catch(e => console.warn('[Backup] 백업 쓰기 실패:', e));
     },
 
     getData() {
@@ -89,28 +160,55 @@ const db = {
     },
 
     saveData(data) {
-        data.dataVersion = Date.now(); // 저장 시각 기록 (loadFromServer 병합 시 우선순위 결정에 사용)
+        // ── 안전 검사: 의도치 않은 길드/멤버 손실 차단 ──
+        if (!this._intentionalDeletion) {
+            if (this._knownGuildIds && this._knownGuildIds.size > 0) {
+                const newGuildIds = new Set(data.guilds.map(g => g.id));
+                const lostIds = [...this._knownGuildIds].filter(id => !newGuildIds.has(id));
+                if (lostIds.length > 0) {
+                    console.error('[SAFETY BLOCKED] 길드 손실 감지 — 저장 차단:', lostIds);
+                    alert(`[데이터 보호] 길드 데이터 손실이 감지되어 저장을 차단했습니다.\n손실 ID: ${lostIds.join(', ')}\n\n페이지를 새로고침한 후 다시 시도하세요.`);
+                    return false;
+                }
+            }
+            if (this._knownMemberIds && this._knownMemberIds.size > 0) {
+                const newMemberIds = new Set(data.members.map(m => m.id));
+                const lostIds = [...this._knownMemberIds].filter(id => !newMemberIds.has(id));
+                if (lostIds.length > 0) {
+                    console.error('[SAFETY BLOCKED] 멤버 손실 감지 — 저장 차단:', lostIds);
+                    alert(`[데이터 보호] 멤버 데이터 손실이 감지되어 저장을 차단했습니다.\n손실 ID: ${lostIds.join(', ')}\n\n페이지를 새로고침한 후 다시 시도하세요.`);
+                    return false;
+                }
+            }
+        }
+
+        data.dataVersion = Date.now();
         this._memoryData = data;
-        // 실제 데이터가 로드된 이후에는 _serverDataLoaded를 true로 유지
-        // (사용자가 직접 저장하면 이후부터는 정상 상태로 간주)
         this._serverDataLoaded = true;
 
-        // 1. 로컬 백업 저장 (오프라인/에러 대비)
+        // 알려진 ID 세트 갱신 (삭제 포함)
+        this._knownGuildIds = new Set(data.guilds.map(g => g.id));
+        this._knownMemberIds = new Set(data.members.map(m => m.id));
+        this._intentionalDeletion = false;
+
+        // 1. 로컬 백업
         try {
             localStorage.setItem(this._key, JSON.stringify(data));
         } catch (e) {
             console.error('Local storage save failed:', e);
         }
 
-        // 2. Firebase 실시간 동기화
+        // 2. Firebase 메인 동기화
         fetch(this._firebaseUrl, {
-            method: 'PUT', // 덮어쓰기
+            method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         }).catch(e => {
             console.error('Firebase save failed:', e);
             alert('클라우드 동기화 실패! 인터넷 연결을 확인해주세요.');
         });
+
+        return true;
     },
 
     // --- Authentication ---
@@ -170,6 +268,8 @@ const db = {
         });
 
         this.saveData(data);
+        // 백업 경로에도 개별 저장 (다른 길드 데이터 영향 없음)
+        this._backupItem('guilds', newGuild);
         return newGuild;
     },
 
@@ -186,8 +286,10 @@ const db = {
             if(customTiers !== undefined) guild.customTiers = customTiers;
             if(customRule !== undefined) guild.customRule = customRule;
             if(customIncentives !== undefined) guild.customIncentives = customIncentives;
-            
+
             this.saveData(data);
+            // 수정된 길드 정보도 백업에 반영
+            this._backupItem('guilds', guild);
             return true;
         }
         return false;
@@ -201,7 +303,9 @@ const db = {
         data.members = data.members.filter(m => m.guildId !== guildId);
         // 3. (선택사항) 해당 길드의 정산 내역도 삭제할 수 있음
         // data.settlements = data.settlements.filter(s => s.guildId !== guildId);
-        
+
+        // 의도적 삭제임을 명시해야 saveData의 손실 감지 차단을 통과
+        this._intentionalDeletion = true;
         this.saveData(data);
         return true;
     },
@@ -273,7 +377,76 @@ const db = {
         });
 
         this.saveData(data);
+        // 백업 경로에 개별 저장
+        this._backupItem('members', member);
         return member;
+    },
+
+    // 길드원 일괄 등록 (saveData 1회 호출로 처리)
+    bulkAddMembers(guildId, memberDataArray) {
+        const data = this.getData();
+        const guild = data.guilds.find(g => g.id === guildId);
+        if (!guild) return { added: 0, skipped: [], errors: [] };
+
+        const hasCustomRule = guild.customRule && guild.customRule.targetCalls > 0;
+        const hasCustomInc = guild.customIncentives && guild.customIncentives.length > 0;
+        const isUnlimited = hasCustomRule || hasCustomInc;
+
+        const tier = guild.tier || 'None';
+        const maxLimit = { None: 9, Bronze: 10, Silver: 15, Gold: 20 }[tier] ?? 9;
+
+        const added = [];
+        const skipped = [];
+        const existingIds = new Set(data.members.map(m => m.id));
+        let idCounter = data.members.length + 1;
+
+        for (const md of memberDataArray) {
+            if (!md.name) continue;
+
+            // 인원 제한 체크
+            if (!isUnlimited) {
+                const currentApproved = data.members.filter(m => m.guildId === guildId && m.status === 'approved').length;
+                if (currentApproved >= maxLimit) {
+                    skipped.push(`${md.name} (${tier} 최대 ${maxLimit}명 초과)`);
+                    continue;
+                }
+            }
+
+            // 고유 ID 생성
+            let newId;
+            do { newId = 'M' + String(idCounter++).padStart(3, '0'); } while (existingIds.has(newId));
+            existingIds.add(newId);
+
+            const newMember = {
+                id: newId,
+                guildId,
+                name: md.name.trim(),
+                baeminId: (md.baeminId || '').trim(),
+                coupangPhone: (md.coupangPhone || '').trim(),
+                memo: (md.memo || '').trim(),
+                deliveries: 0,
+                status: 'approved',
+                createdAt: new Date().toISOString().split('T')[0]
+            };
+            data.members.push(newMember);
+            added.push(newMember);
+
+            if (!data.registrationHistory) data.registrationHistory = [];
+            data.registrationHistory.push({
+                type: 'member_add',
+                guildId,
+                name: newMember.name,
+                timestamp: new Date().toISOString(),
+                details: `일괄 등록 [배민:${newMember.baeminId || '-'}] [쿠팡:${newMember.coupangPhone || '-'}]`
+            });
+        }
+
+        if (added.length > 0) {
+            this.saveData(data);
+            added.forEach(m => this._backupItem('members', m));
+        }
+
+        return { added: added.length, skipped };
     },
 
     updateMember(id, updatedFields) {
@@ -281,7 +454,7 @@ const db = {
         const member = data.members.find(m => m.id === id);
         if (member) {
             Object.assign(member, updatedFields);
-            
+
             // Record history (수정된 상세 정보 영구 기록)
             if (!data.registrationHistory) data.registrationHistory = [];
             data.registrationHistory.push({
@@ -293,6 +466,8 @@ const db = {
             });
 
             this.saveData(data);
+            // 수정된 멤버 정보도 백업에 반영
+            this._backupItem('members', member);
             return true;
         }
         return false;
@@ -301,6 +476,8 @@ const db = {
     deleteMember(id) {
         const data = this.getData();
         data.members = data.members.filter(m => m.id !== id);
+        // 의도적 삭제임을 명시해야 saveData의 손실 감지 차단을 통과
+        this._intentionalDeletion = true;
         this.saveData(data);
     },
 
