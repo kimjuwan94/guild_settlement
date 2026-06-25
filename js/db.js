@@ -31,8 +31,10 @@ const db = {
 
     _memoryData: null,
     _firebaseUrl: 'https://floche-gm-default-rtdb.firebaseio.com/data.json',
+    _serverDataLoaded: false, // Firebase 또는 로컬캐시에서 실제 데이터를 로드했는지 여부
 
     async loadFromServer() {
+        this._serverDataLoaded = false;
         try {
             // Firebase가 항상 정답 (단일 진실의 원천)
             // localStorage는 Firebase 접속 실패 시 오프라인 백업으로만 사용
@@ -42,6 +44,7 @@ const db = {
             if (cloudData && cloudData.guilds && cloudData.guilds.length > 0) {
                 // Firebase 데이터가 정상이면 그대로 사용 — 절대 로컬로 덮어쓰지 않음
                 this._memoryData = { ...this._defaultData, ...cloudData };
+                this._serverDataLoaded = true;
                 // 로컬 캐시 갱신 (오프라인 대비)
                 localStorage.setItem(this._key, JSON.stringify(this._memoryData));
             } else {
@@ -50,6 +53,7 @@ const db = {
                 const localData = localDataStr ? JSON.parse(localDataStr) : null;
                 if (localData && localData.guilds && localData.guilds.length > 0) {
                     this._memoryData = { ...this._defaultData, ...localData };
+                    this._serverDataLoaded = true;
                     // 로컬 데이터를 Firebase에 복구
                     fetch(this._firebaseUrl, {
                         method: 'PUT',
@@ -57,7 +61,9 @@ const db = {
                         body: JSON.stringify(this._memoryData)
                     }).catch(e => console.error('Firebase recovery upload failed:', e));
                 } else {
+                    // Firebase도 비어있고 로컬캐시도 없음 — 기본값만 사용 (Firebase 덮어쓰기 금지)
                     this._memoryData = { ...this._defaultData };
+                    this._serverDataLoaded = false;
                 }
             }
         } catch (e) {
@@ -66,8 +72,11 @@ const db = {
             const localDataStr = localStorage.getItem(this._key);
             if (localDataStr) {
                 this._memoryData = { ...this._defaultData, ...JSON.parse(localDataStr) };
+                this._serverDataLoaded = true;
             } else {
+                // 네트워크 오류 + 로컬캐시 없음 — 기본값 사용, Firebase 덮어쓰기 절대 금지
                 this._memoryData = { ...this._defaultData };
+                this._serverDataLoaded = false;
             }
         }
     },
@@ -82,6 +91,9 @@ const db = {
     saveData(data) {
         data.dataVersion = Date.now(); // 저장 시각 기록 (loadFromServer 병합 시 우선순위 결정에 사용)
         this._memoryData = data;
+        // 실제 데이터가 로드된 이후에는 _serverDataLoaded를 true로 유지
+        // (사용자가 직접 저장하면 이후부터는 정상 상태로 간주)
+        this._serverDataLoaded = true;
 
         // 1. 로컬 백업 저장 (오프라인/에러 대비)
         try {
@@ -366,9 +378,16 @@ const db = {
                                         String(wednesday.getDate()).padStart(2, '0');
         
         if (!data.currentWeekId) {
-            // First time ever running the app, just set it
             data.currentWeekId = currentCalculatedWeekId;
-            this.saveData(data);
+            if (this._serverDataLoaded) {
+                // 실제 데이터가 로드된 경우에만 Firebase에 저장
+                this.saveData(data);
+            } else {
+                // Firebase/로컬 모두 데이터 없음 — 메모리만 업데이트, Firebase 덮어쓰기 금지
+                // (Firebase에 실제 데이터가 있을 수 있으므로 절대 덮어쓰지 않음)
+                this._memoryData = data;
+                try { localStorage.setItem(this._key, JSON.stringify(data)); } catch(e) {}
+            }
             return;
         }
 
