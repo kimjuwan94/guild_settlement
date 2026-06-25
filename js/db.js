@@ -132,17 +132,8 @@ const db = {
             });
         }
 
-        if (backupData.members) {
-            const mainMemberIds = new Set(mainData.members.map(m => m.id));
-            const currentGuildIds = new Set(mainData.guilds.map(g => g.id));
-            Object.values(backupData.members).forEach(m => {
-                if (!mainMemberIds.has(m.id) && currentGuildIds.has(m.guildId)) {
-                    console.warn('[RESTORE] 백업에서 멤버 복원:', m.name);
-                    mainData.members.push(m);
-                    restored = true;
-                }
-            });
-        }
+        // 멤버 복원은 비활성화: 한 기기에서 삭제한 멤버가 다른 기기에서 복원되는 현상 방지
+        // 멤버는 메인 Firebase를 항상 신뢰하며, 전체 데이터 유실 시에만 아래 전체 복원 경로를 사용
 
         return restored;
     },
@@ -322,8 +313,10 @@ const db = {
     deleteGuild(guildId) {
         const data = this.getData();
         // 1. 길드 삭제
+        const deletedGuild = data.guilds.find(g => g.id === guildId);
         data.guilds = data.guilds.filter(g => g.id !== guildId);
         // 2. 해당 길드 소속 멤버 삭제 (연쇄 삭제)
+        const deletedMembers = data.members.filter(m => m.guildId === guildId);
         data.members = data.members.filter(m => m.guildId !== guildId);
         // 3. (선택사항) 해당 길드의 정산 내역도 삭제할 수 있음
         // data.settlements = data.settlements.filter(s => s.guildId !== guildId);
@@ -331,6 +324,17 @@ const db = {
         // 의도적 삭제임을 명시해야 saveData의 손실 감지 차단을 통과
         this._intentionalDeletion = true;
         this.saveData(data);
+
+        // 백업에서도 삭제 (다른 기기에서 복원되는 현상 방지)
+        if (deletedGuild) {
+            fetch(`${this._backupBaseUrl}/guilds/${guildId}.json`, { method: 'DELETE' })
+                .catch(e => console.warn('[Backup] 길드 백업 삭제 실패:', e));
+        }
+        deletedMembers.forEach(m => {
+            fetch(`${this._backupBaseUrl}/members/${m.id}.json`, { method: 'DELETE' })
+                .catch(e => console.warn('[Backup] 멤버 백업 삭제 실패:', e));
+        });
+
         return true;
     },
 
@@ -582,6 +586,9 @@ const db = {
         // 의도적 삭제임을 명시해야 saveData의 손실 감지 차단을 통과
         this._intentionalDeletion = true;
         this.saveData(data);
+        // 백업에서도 삭제 (다른 기기에서 복원되는 현상 방지)
+        fetch(`${this._backupBaseUrl}/members/${id}.json`, { method: 'DELETE' })
+            .catch(e => console.warn('[Backup] 멤버 백업 삭제 실패:', e));
     },
 
     updateMemberStatus(id, newStatus) {
