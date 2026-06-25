@@ -2080,8 +2080,11 @@ const app = {
 
         document.getElementById('bulk-upload-modal').classList.add('hidden');
 
+        const dupSkipped = result.skipped.filter(s => s.includes('(중복)'));
+        const overSkipped = result.skipped.filter(s => !s.includes('(중복)'));
         let msg = `${result.added}명이 등록되었습니다.`;
-        if (result.skipped.length > 0) msg += `\n\n인원 초과로 미등록:\n${result.skipped.join('\n')}`;
+        if (dupSkipped.length > 0) msg += `\n\n⚠️ 중복 (이미 등록됨):\n${dupSkipped.join('\n')}`;
+        if (overSkipped.length > 0) msg += `\n\n인원 초과로 미등록:\n${overSkipped.join('\n')}`;
         alert(msg);
 
         this.renderMembers(document.getElementById('app-content'));
@@ -2342,8 +2345,12 @@ const app = {
         document.getElementById('multi-bulk-modal').remove();
 
         const lines = Object.values(results).map(r => {
-            const skippedStr = r.skipped.length > 0 ? ` (미등록 ${r.skipped.length}명: ${r.skipped.join(', ')})` : '';
-            return `· ${r.guildName}: ${r.added}명 등록${skippedStr}`;
+            const dups = r.skipped.filter(s => s.includes('(중복)'));
+            const over = r.skipped.filter(s => !s.includes('(중복)'));
+            let extra = '';
+            if (dups.length > 0) extra += ` | 중복 ${dups.length}명: ${dups.map(s=>s.replace(' (중복)','')).join(', ')}`;
+            if (over.length > 0) extra += ` | 인원초과 ${over.length}명`;
+            return `· ${r.guildName}: ${r.added}명 등록${extra}`;
         });
         alert(`등록 완료\n\n${lines.join('\n')}`);
 
@@ -2440,8 +2447,11 @@ const app = {
         const result = db.bulkAddMembers(guildId, members);
         document.getElementById('admin-bulk-modal').remove();
 
+        const dupSkipped = result.skipped.filter(s => s.includes('(중복)'));
+        const overSkipped = result.skipped.filter(s => !s.includes('(중복)'));
         let msg = `${result.added}명이 등록되었습니다.`;
-        if (result.skipped.length > 0) msg += `\n\n인원 초과로 미등록:\n${result.skipped.join('\n')}`;
+        if (dupSkipped.length > 0) msg += `\n\n⚠️ 중복 (이미 등록됨):\n${dupSkipped.join('\n')}`;
+        if (overSkipped.length > 0) msg += `\n\n인원 초과로 미등록:\n${overSkipped.join('\n')}`;
         alert(msg);
 
         this.renderAdmin(document.getElementById('app-content'));

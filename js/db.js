@@ -403,6 +403,16 @@ const db = {
         for (const md of memberDataArray) {
             if (!md.name) continue;
 
+            // 중복 체크: 같은 길드에 동일 이름 이미 존재하는지 확인
+            const normalizedName = md.name.trim().replace(/\s/g, '');
+            const isDuplicate = data.members.some(m =>
+                m.guildId === guildId && m.name.replace(/\s/g, '') === normalizedName
+            );
+            if (isDuplicate) {
+                skipped.push(`${md.name} (중복)`);
+                continue;
+            }
+
             // 인원 제한 체크
             if (!isUnlimited) {
                 const currentApproved = data.members.filter(m => m.guildId === guildId && m.status === 'approved').length;
@@ -472,6 +482,12 @@ const db = {
 
             for (const md of memberDataArray) {
                 if (!md.name) continue;
+                // 중복 체크
+                const normalizedName = md.name.trim().replace(/\s/g, '');
+                const isDuplicate = data.members.some(m =>
+                    m.guildId === guildId && m.name.replace(/\s/g, '') === normalizedName
+                );
+                if (isDuplicate) { skipped.push(`${md.name} (중복)`); continue; }
                 if (!isUnlimited) {
                     const currentApproved = data.members.filter(m => m.guildId === guildId && m.status === 'approved').length + added.length;
                     if (currentApproved >= maxLimit) { skipped.push(`${md.name} (인원 초과)`); continue; }
