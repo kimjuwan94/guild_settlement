@@ -2444,7 +2444,7 @@ const app = {
         const guildId = this.state._bulkTargetGuildId;
         if (!members || members.length === 0 || !guildId) return;
 
-        const result = db.bulkAddMembers(guildId, members);
+        const result = db.bulkAddMembers(guildId, members, true);
         document.getElementById('admin-bulk-modal').remove();
 
         const dupSkipped = result.skipped.filter(s => s.includes('(중복)'));

@@ -383,14 +383,14 @@ const db = {
     },
 
     // 길드원 일괄 등록 (saveData 1회 호출로 처리)
-    bulkAddMembers(guildId, memberDataArray) {
+    bulkAddMembers(guildId, memberDataArray, bypassLimit = false) {
         const data = this.getData();
         const guild = data.guilds.find(g => g.id === guildId);
         if (!guild) return { added: 0, skipped: [], errors: [] };
 
         const hasCustomRule = guild.customRule && guild.customRule.targetCalls > 0;
         const hasCustomInc = guild.customIncentives && guild.customIncentives.length > 0;
-        const isUnlimited = hasCustomRule || hasCustomInc;
+        const isUnlimited = bypassLimit || hasCustomRule || hasCustomInc;
 
         const tier = guild.tier || 'None';
         const maxLimit = { None: 9, Bronze: 10, Silver: 15, Gold: 20 }[tier] ?? 9;
@@ -461,7 +461,7 @@ const db = {
 
     // 여러 길드에 동시 일괄 등록 (saveData 1회)
     // groupedMembers: { [guildId]: [{ name, baeminId, coupangPhone, memo }, ...] }
-    bulkAddMembersMultiGuild(groupedMembers) {
+    bulkAddMembersMultiGuild(groupedMembers, bypassLimit = true) {
         const data = this.getData();
         const existingIds = new Set(data.members.map(m => m.id));
         let idCounter = data.members.length + 1;
@@ -474,7 +474,7 @@ const db = {
 
             const hasCustomRule = guild.customRule && guild.customRule.targetCalls > 0;
             const hasCustomInc = guild.customIncentives && guild.customIncentives.length > 0;
-            const isUnlimited = hasCustomRule || hasCustomInc;
+            const isUnlimited = bypassLimit || hasCustomRule || hasCustomInc;
             const maxLimit = { None: 9, Bronze: 10, Silver: 15, Gold: 20 }[guild.tier || 'None'] ?? 9;
 
             const added = [];
