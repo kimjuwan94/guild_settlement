@@ -1370,59 +1370,72 @@ const app = {
 
     renderAdminHistory(container, selectedWeek = null) {
         if (this.state.currentUser.role !== 'admin') return;
-        
+
         const allSettlements = db.getAllSettlements();
-        if (allSettlements.length === 0) {
-            container.innerHTML = `
-                <div class="glass-panel rounded-xl border border-gray-100 p-12 text-center">
-                    <i data-lucide="wallet" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
-                    <h3 class="text-lg font-semibold text-gray-800 mb-2">과거 정산 내역이 없습니다</h3>
-                    <p class="text-sm text-gray-500">아직 마감된 정산 기록이 존재하지 않습니다.</p>
-                </div>
-            `;
-            lucide.createIcons();
-            return;
-        }
-
-        // Get unique weeks sorted descending
-        const uniqueWeeks = [...new Set(allSettlements.map(s => s.weekName))].reverse();
-        const activeWeek = selectedWeek || uniqueWeeks[0];
-
-        // Filter settlements by selected week
-        const weekSettlements = allSettlements.filter(s => s.weekName === activeWeek);
         const guilds = db.getGuilds();
 
-        const optionsHtml = uniqueWeeks.map(w => `<option value="${w}" ${w === activeWeek ? 'selected' : ''}>${w}</option>`).join('');
+        // 주차 목록 (정산 레코드 기준)
+        const uniqueWeeks = [...new Set(allSettlements.map(s => s.weekName))].reverse();
+        const activeWeek = selectedWeek || uniqueWeeks[0] || null;
 
-        let rows = weekSettlements.map(s => {
-            const guildName = guilds.find(g => g.id === s.guildId)?.name || '알 수 없음';
-            const gmName = guilds.find(g => g.id === s.guildId)?.gmName || '알 수 없음';
-            
-            const btnClass = s.isPaid 
-                ? 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200' 
-                : 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200';
-            const icon = s.isPaid ? 'check-circle-2' : 'clock';
-            const btnText = s.isPaid ? '지급 완료됨' : '지급 대기중';
+        // 선택된 주차의 settlement 맵 { guildId → record }
+        const weekSettlementMap = {};
+        if (activeWeek) {
+            allSettlements.filter(s => s.weekName === activeWeek)
+                .forEach(s => { weekSettlementMap[s.guildId] = s; });
+        }
 
-            return `
-                <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    <td class="py-4 px-4 text-sm font-medium text-gray-900">${guildName}</td>
-                    <td class="py-4 px-4 text-sm text-gray-700">${gmName}</td>
-                    <td class="py-4 px-4 text-sm text-center text-gray-600">${s.memberCount}명</td>
-                    <td class="py-4 px-4 text-sm text-center text-gray-600">${s.totalDeliveries.toLocaleString()}건</td>
-                    <td class="py-4 px-4 text-sm text-center font-bold text-primary-700">${s.tier}</td>
-                    <td class="py-4 px-4 text-sm text-right font-black text-blue-600">${s.totalAmount.toLocaleString()}원</td>
-                    <td class="py-4 px-4 text-sm text-right flex items-center justify-end space-x-2">
-                        <button onclick="app.promptEditSettlement('${s.id}')" class="px-2 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors flex items-center" title="정산 내역 수정(보정)">
-                            <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
-                        </button>
-                        <button onclick="app.togglePayment('${s.id}', '${activeWeek}')" class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center ${btnClass}">
-                            <i data-lucide="${icon}" class="w-3.5 h-3.5 mr-1.5"></i>${btnText}
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
+        const optionsHtml = uniqueWeeks.length > 0
+            ? uniqueWeeks.map(w => `<option value="${w}" ${w === activeWeek ? 'selected' : ''}>${w}</option>`).join('')
+            : `<option value="">주차 없음</option>`;
+
+        // 모든 등록 길드를 표시. 정산 레코드 있으면 실데이터, 없으면 미정산 표시
+        let rows = '';
+        if (guilds.length === 0) {
+            rows = `<tr><td colspan="7" class="py-10 text-center text-sm text-gray-400">등록된 길드가 없습니다.</td></tr>`;
+        } else {
+            rows = guilds.map(guild => {
+                const s = weekSettlementMap[guild.id];
+                if (s) {
+                    const btnClass = s.isPaid
+                        ? 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200'
+                        : 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200';
+                    const icon = s.isPaid ? 'check-circle-2' : 'clock';
+                    const btnText = s.isPaid ? '지급 완료됨' : '지급 대기중';
+                    return `
+                        <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                            <td class="py-4 px-4 text-sm font-medium text-gray-900">${guild.name}</td>
+                            <td class="py-4 px-4 text-sm text-gray-700">${guild.gmName || '-'}</td>
+                            <td class="py-4 px-4 text-sm text-center text-gray-600">${s.memberCount}명</td>
+                            <td class="py-4 px-4 text-sm text-center text-gray-600">${s.totalDeliveries.toLocaleString()}건</td>
+                            <td class="py-4 px-4 text-sm text-center font-bold text-primary-700">${s.tier}</td>
+                            <td class="py-4 px-4 text-sm text-right font-black text-blue-600">${s.totalAmount.toLocaleString()}원</td>
+                            <td class="py-4 px-4 text-sm text-right flex items-center justify-end space-x-2">
+                                <button onclick="app.promptEditSettlement('${s.id}')" class="px-2 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors flex items-center" title="정산 내역 수정(보정)">
+                                    <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                                </button>
+                                <button onclick="app.togglePayment('${s.id}', '${activeWeek}')" class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center ${btnClass}">
+                                    <i data-lucide="${icon}" class="w-3.5 h-3.5 mr-1.5"></i>${btnText}
+                                </button>
+                            </td>
+                        </tr>`;
+                } else {
+                    // 해당 주차 정산 레코드 없음
+                    return `
+                        <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors opacity-60">
+                            <td class="py-4 px-4 text-sm font-medium text-gray-900">${guild.name}</td>
+                            <td class="py-4 px-4 text-sm text-gray-700">${guild.gmName || '-'}</td>
+                            <td class="py-4 px-4 text-sm text-center text-gray-400">-</td>
+                            <td class="py-4 px-4 text-sm text-center text-gray-400">-</td>
+                            <td class="py-4 px-4 text-sm text-center text-gray-400">-</td>
+                            <td class="py-4 px-4 text-sm text-right text-gray-400">-</td>
+                            <td class="py-4 px-4 text-sm text-right">
+                                <span class="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-400 border border-gray-200">미정산</span>
+                            </td>
+                        </tr>`;
+                }
+            }).join('');
+        }
 
         container.innerHTML = `
             <div class="glass-panel rounded-xl border border-gray-100 p-6 shadow-sm">
@@ -1446,6 +1459,11 @@ const app = {
                     </div>
                 </div>
 
+                ${uniqueWeeks.length === 0 ? `
+                <div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700">
+                    <strong>아직 마감된 정산 기록이 없습니다.</strong> 수요일 자동 마감 또는 수동 주간 마감 후 정산 내역이 나타납니다.
+                    길드 목록은 현재 등록된 길드 기준으로 표시됩니다.
+                </div>` : ''}
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
                         <thead>
