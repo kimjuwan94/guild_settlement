@@ -2558,14 +2558,11 @@ const app = {
                 // UPDATE FINALIZED SETTLEMENTS (소급 적용) + 이력 저장 — saveData 1회
                 const guilds = db.getGuilds();
                 const members = db.getMembers();
-                const settlements = db.getAllSettlements().filter(s => s.weekName === targetWeekName);
                 const data = db.getData();
                 let updatedGuildNames = [];
 
                 guilds.forEach(guild => {
-                    const targetSettlement = settlements.find(s => s.guildId === guild.id);
-                    if (!targetSettlement) return;
-
+                    // 해당 주차에 매칭된 이 길드 소속 멤버 집계
                     const guildMemberDeliveries = {};
                     for (const [mId, count] of Object.entries(result.memberDeliveries)) {
                         const m = members.find(x => x.id === mId);
@@ -2573,8 +2570,29 @@ const app = {
                     }
                     if (Object.keys(guildMemberDeliveries).length === 0) return;
 
-                    const s = data.settlements.find(x => x.id === targetSettlement.id);
-                    if (!s) return;
+                    let s = data.settlements.find(x => x.guildId === guild.id && x.weekName === targetWeekName);
+
+                    if (!s) {
+                        // 전주 정산 레코드 없음 → 신규 생성 (길드가 이번 주 새로 등록된 경우)
+                        const approvedMembers = members.filter(m => m.guildId === guild.id && m.status === 'approved');
+                        const newRec = {
+                            id: 'S' + Date.now() + Math.floor(Math.random() * 1000),
+                            weekName: targetWeekName,
+                            guildId: guild.id,
+                            date: new Date().toISOString().split('T')[0],
+                            memberCount: approvedMembers.length,
+                            totalDeliveries: 0,
+                            tier: 'None',
+                            recognizedDeliveries: 0,
+                            chunks: [],
+                            totalAmount: 0,
+                            isPaid: false,
+                            memberStats: approvedMembers.map(m => ({ id: m.id, name: m.name, deliveries: 0 })),
+                        };
+                        data.settlements.push(newRec);
+                        s = newRec;
+                    }
+
                     if (!s.memberStats) s.memberStats = [];
                     for (const [mId, count] of Object.entries(guildMemberDeliveries)) {
                         const stat = s.memberStats.find(ms => ms.id === mId);
