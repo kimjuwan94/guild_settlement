@@ -110,9 +110,10 @@ const db = {
             }
         }
 
-        // 로드 완료 후 알려진 ID 세트 초기화
-        this._knownGuildIds = new Set(this._memoryData.guilds.map(g => g.id));
-        this._knownMemberIds = new Set(this._memoryData.members.map(m => m.id));
+        // 로드 완료 후 알려진 ID 세트 초기화 (getData() 경유해 array 보정 후 세팅)
+        const loaded = this.getData();
+        this._knownGuildIds = new Set(loaded.guilds.map(g => g.id));
+        this._knownMemberIds = new Set(loaded.members.map(m => m.id));
     },
 
     // 백업 데이터로 메인 데이터의 누락 항목 복원. 복원 발생 시 true 반환.
@@ -160,10 +161,20 @@ const db = {
         if (!this._memoryData) {
             return this._defaultData;
         }
-        // members가 object로 잘못 저장된 경우 array로 복원
-        if (this._memoryData.members && !Array.isArray(this._memoryData.members)) {
-            this._memoryData.members = Object.values(this._memoryData.members);
-        }
+        // Firebase PUT 후 array가 object로 반환되는 경우 복원
+        const toArray = v => (!v ? [] : Array.isArray(v) ? v : Object.values(v));
+        if (this._memoryData.members && !Array.isArray(this._memoryData.members))
+            this._memoryData.members = toArray(this._memoryData.members);
+        if (this._memoryData.guilds && !Array.isArray(this._memoryData.guilds))
+            this._memoryData.guilds = toArray(this._memoryData.guilds);
+        if (this._memoryData.settlements && !Array.isArray(this._memoryData.settlements))
+            this._memoryData.settlements = toArray(this._memoryData.settlements);
+        if (this._memoryData.uploadHistory && !Array.isArray(this._memoryData.uploadHistory))
+            this._memoryData.uploadHistory = toArray(this._memoryData.uploadHistory);
+        if (this._memoryData.upgradeRequests && !Array.isArray(this._memoryData.upgradeRequests))
+            this._memoryData.upgradeRequests = toArray(this._memoryData.upgradeRequests);
+        if (this._memoryData.registrationHistory && !Array.isArray(this._memoryData.registrationHistory))
+            this._memoryData.registrationHistory = toArray(this._memoryData.registrationHistory);
         return this._memoryData;
     },
 
