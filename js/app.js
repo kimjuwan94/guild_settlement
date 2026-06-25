@@ -1396,41 +1396,84 @@ const app = {
         } else {
             rows = guilds.map(guild => {
                 const s = weekSettlementMap[guild.id];
+                // 현재 등록된 멤버 목록 (settlement 여부와 무관)
+                const currentMembers = db.getMembers(guild.id).filter(m => m.status === 'approved');
+
                 if (s) {
                     const btnClass = s.isPaid
                         ? 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200'
                         : 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200';
                     const icon = s.isPaid ? 'check-circle-2' : 'clock';
                     const btnText = s.isPaid ? '지급 완료됨' : '지급 대기중';
+                    const detailId = `detail-${s.id}`;
+
+                    // memberStats와 현재 멤버 병합 → 누락 없이 표시
+                    const statsMap = {};
+                    (s.memberStats || []).forEach(ms => { statsMap[ms.id] = ms; });
+                    currentMembers.forEach(m => {
+                        if (!statsMap[m.id]) statsMap[m.id] = { id: m.id, name: m.name, deliveries: 0 };
+                    });
+                    const mergedStats = Object.values(statsMap).sort((a, b) => b.deliveries - a.deliveries);
+                    const memberDetailRows = mergedStats.map(ms =>
+                        `<tr class="text-xs">
+                            <td class="px-3 py-1.5 text-gray-700 font-medium">${ms.name}</td>
+                            <td class="px-3 py-1.5 text-center font-mono ${ms.deliveries > 0 ? 'text-blue-700 font-bold' : 'text-gray-400'}">${ms.deliveries}건</td>
+                        </tr>`
+                    ).join('');
+
                     return `
-                        <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                            <td class="py-4 px-4 text-sm font-medium text-gray-900">${guild.name}</td>
+                        <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer" onclick="document.getElementById('${detailId}').classList.toggle('hidden')">
+                            <td class="py-4 px-4 text-sm font-medium text-gray-900 flex items-center gap-1">
+                                <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>${guild.name}
+                            </td>
                             <td class="py-4 px-4 text-sm text-gray-700">${guild.gmName || '-'}</td>
                             <td class="py-4 px-4 text-sm text-center text-gray-600">${s.memberCount}명</td>
                             <td class="py-4 px-4 text-sm text-center text-gray-600">${s.totalDeliveries.toLocaleString()}건</td>
                             <td class="py-4 px-4 text-sm text-center font-bold text-primary-700">${s.tier}</td>
                             <td class="py-4 px-4 text-sm text-right font-black text-blue-600">${s.totalAmount.toLocaleString()}원</td>
-                            <td class="py-4 px-4 text-sm text-right flex items-center justify-end space-x-2">
-                                <button onclick="app.promptEditSettlement('${s.id}')" class="px-2 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors flex items-center" title="정산 내역 수정(보정)">
-                                    <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
-                                </button>
-                                <button onclick="app.togglePayment('${s.id}', '${activeWeek}')" class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center ${btnClass}">
-                                    <i data-lucide="${icon}" class="w-3.5 h-3.5 mr-1.5"></i>${btnText}
-                                </button>
+                            <td class="py-4 px-4 text-sm text-right" onclick="event.stopPropagation()">
+                                <div class="flex items-center justify-end space-x-2">
+                                    <button onclick="app.promptEditSettlement('${s.id}')" class="px-2 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors flex items-center" title="정산 내역 수정(보정)">
+                                        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                    <button onclick="app.togglePayment('${s.id}', '${activeWeek}')" class="px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center ${btnClass}">
+                                        <i data-lucide="${icon}" class="w-3.5 h-3.5 mr-1.5"></i>${btnText}
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr id="${detailId}" class="hidden bg-blue-50">
+                            <td colspan="7" class="px-6 py-3">
+                                <div class="text-xs font-bold text-blue-700 mb-2">길드원별 배달 내역 (${mergedStats.length}명)</div>
+                                <table class="w-full max-w-sm">
+                                    <thead><tr class="text-gray-400 text-[10px]"><th class="px-3 pb-1 text-left">이름</th><th class="px-3 pb-1 text-center">건수</th></tr></thead>
+                                    <tbody>${memberDetailRows}</tbody>
+                                </table>
                             </td>
                         </tr>`;
                 } else {
-                    // 해당 주차 정산 레코드 없음
+                    // 해당 주차 정산 레코드 없음 — 현재 등록된 멤버 목록은 표시
+                    const memberListHtml = currentMembers.length > 0
+                        ? currentMembers.map(m => `<span class="inline-block px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] mr-1 mb-1">${m.name}</span>`).join('')
+                        : '<span class="text-[10px] text-gray-400">등록된 길드원 없음</span>';
+                    const detailId2 = `detail-no-${guild.id}-${(activeWeek || '').replace(/\s/g, '')}`;
                     return `
-                        <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors opacity-60">
-                            <td class="py-4 px-4 text-sm font-medium text-gray-900">${guild.name}</td>
+                        <tr class="border-b border-gray-100 transition-colors opacity-70 cursor-pointer" onclick="document.getElementById('${detailId2}').classList.toggle('hidden')">
+                            <td class="py-4 px-4 text-sm font-medium text-gray-900 flex items-center gap-1">
+                                <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>${guild.name}
+                            </td>
                             <td class="py-4 px-4 text-sm text-gray-700">${guild.gmName || '-'}</td>
-                            <td class="py-4 px-4 text-sm text-center text-gray-400">-</td>
+                            <td class="py-4 px-4 text-sm text-center text-gray-400">${currentMembers.length > 0 ? currentMembers.length + '명' : '-'}</td>
                             <td class="py-4 px-4 text-sm text-center text-gray-400">-</td>
                             <td class="py-4 px-4 text-sm text-center text-gray-400">-</td>
                             <td class="py-4 px-4 text-sm text-right text-gray-400">-</td>
                             <td class="py-4 px-4 text-sm text-right">
                                 <span class="px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-400 border border-gray-200">미정산</span>
+                            </td>
+                        </tr>
+                        <tr id="${detailId2}" class="hidden bg-gray-50">
+                            <td colspan="7" class="px-6 py-2 text-xs text-gray-500">
+                                <span class="font-bold text-gray-600 mr-2">현재 등록 길드원:</span>${memberListHtml}
                             </td>
                         </tr>`;
                 }
@@ -2579,18 +2622,21 @@ const app = {
                 const data = db.getData();
                 let updatedGuildNames = [];
 
+                // 이 주차에 이미 저장된 업로드 이력 (길드 등록 이전 업로드 소급 반영용)
+                const priorUploads = (data.uploadHistory || []).filter(u => u.weekName === targetWeekName && u.memberDeliveries);
+
                 guilds.forEach(guild => {
-                    // 해당 주차에 매칭된 이 길드 소속 멤버 집계
+                    // 이번 업로드에서 이 길드 소속 멤버와 매칭된 건수
                     const guildMemberDeliveries = {};
                     for (const [mId, count] of Object.entries(result.memberDeliveries)) {
                         const m = members.find(x => x.id === mId);
                         if (m && m.guildId === guild.id) guildMemberDeliveries[mId] = count;
                     }
 
-                    // 매칭 여부와 무관하게 정산 레코드가 없으면 항상 생성 (미정산 방지)
+                    // 정산 레코드 없으면 생성 (멤버 등록 시점 무관하게 누락 방지)
+                    const approvedMembers = members.filter(m => m.guildId === guild.id && m.status === 'approved');
                     let s = data.settlements.find(x => x.guildId === guild.id && x.weekName === targetWeekName);
                     if (!s) {
-                        const approvedMembers = members.filter(m => m.guildId === guild.id && m.status === 'approved');
                         const newRec = {
                             id: 'S' + Date.now() + Math.floor(Math.random() * 1000),
                             weekName: targetWeekName,
@@ -2607,11 +2653,33 @@ const app = {
                         };
                         data.settlements.push(newRec);
                         s = newRec;
+
+                        // 이전에 업로드된 이력을 소급 반영 (길드를 나중에 등록한 경우 대비)
+                        for (const upload of priorUploads) {
+                            for (const [mId, count] of Object.entries(upload.memberDeliveries)) {
+                                const m = data.members.find(x => x.id === mId);
+                                if (!m || m.guildId !== guild.id) continue;
+                                const stat = s.memberStats.find(ms => ms.id === mId);
+                                if (stat) {
+                                    stat.deliveries += count;
+                                } else {
+                                    s.memberStats.push({ id: mId, name: m.name, deliveries: count });
+                                }
+                            }
+                        }
+                    } else {
+                        // 기존 레코드의 memberStats에 현재 등록된 멤버 중 누락된 항목 보완
+                        if (!s.memberStats) s.memberStats = [];
+                        for (const m of approvedMembers) {
+                            if (!s.memberStats.find(ms => ms.id === m.id)) {
+                                s.memberStats.push({ id: m.id, name: m.name, deliveries: 0 });
+                            }
+                        }
+                        // memberCount도 최신 등록 인원으로 갱신
+                        s.memberCount = approvedMembers.length;
                     }
 
-                    // 매칭된 멤버 없으면 deliveries 업데이트 생략
-                    if (Object.keys(guildMemberDeliveries).length === 0) return;
-
+                    // 이번 업로드 건수 반영
                     if (!s.memberStats) s.memberStats = [];
                     for (const [mId, count] of Object.entries(guildMemberDeliveries)) {
                         const stat = s.memberStats.find(ms => ms.id === mId);
@@ -2622,13 +2690,17 @@ const app = {
                             s.memberStats.push({ id: mId, name: member ? member.name : 'Unknown', deliveries: count });
                         }
                     }
+
+                    // 건수/등급/금액 재계산 (매칭 여부와 무관하게 항상 갱신)
                     s.totalDeliveries = s.memberStats.reduce((sum, ms) => sum + ms.deliveries, 0);
                     const calcResult = SettlementEngine.calculateSettlement(s.memberCount, s.totalDeliveries, guild.customTiers, guild.customRule);
                     s.tier = calcResult.tier;
                     s.recognizedDeliveries = calcResult.recognizedDeliveries;
                     s.chunks = calcResult.chunks;
                     s.totalAmount = calcResult.totalAmount;
-                    updatedGuildNames.push(`${guild.name} (+${Object.values(guildMemberDeliveries).reduce((a,b)=>a+b,0)}건)`);
+
+                    const matched = Object.values(guildMemberDeliveries).reduce((a, b) => a + b, 0);
+                    if (matched > 0) updatedGuildNames.push(`${guild.name} (+${matched}건)`);
                 });
 
                 if (!data.uploadHistory) data.uploadHistory = [];
