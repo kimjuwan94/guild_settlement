@@ -1427,7 +1427,7 @@ const app = {
                                 <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>${guild.name}
                             </td>
                             <td class="py-4 px-4 text-sm text-gray-700">${guild.gmName || '-'}</td>
-                            <td class="py-4 px-4 text-sm text-center text-gray-600">${s.memberCount}명</td>
+                            <td class="py-4 px-4 text-sm text-center text-gray-600">${currentMembers.length}명</td>
                             <td class="py-4 px-4 text-sm text-center text-gray-600">${s.totalDeliveries.toLocaleString()}건</td>
                             <td class="py-4 px-4 text-sm text-center font-bold text-primary-700">${s.tier}</td>
                             <td class="py-4 px-4 text-sm text-right font-black text-blue-600">${s.totalAmount.toLocaleString()}원</td>
