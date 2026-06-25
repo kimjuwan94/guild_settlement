@@ -51,6 +51,10 @@ const db = {
 
             if (cloudData && cloudData.guilds && cloudData.guilds.length > 0) {
                 this._memoryData = { ...this._defaultData, ...cloudData };
+                // members가 Firebase에서 object로 올 경우 array로 변환
+                if (this._memoryData.members && !Array.isArray(this._memoryData.members)) {
+                    this._memoryData.members = Object.values(this._memoryData.members);
+                }
                 // 백업 교차 검증: 백업에 있는 길드/멤버가 메인 데이터에 없으면 자동 복원
                 const restored = this._restoreFromBackup(this._memoryData, backupData);
                 if (restored) {
@@ -156,13 +160,22 @@ const db = {
         if (!this._memoryData) {
             return this._defaultData;
         }
+        // members가 object로 잘못 저장된 경우 array로 복원
+        if (this._memoryData.members && !Array.isArray(this._memoryData.members)) {
+            this._memoryData.members = Object.values(this._memoryData.members);
+        }
         return this._memoryData;
     },
 
     saveData(data) {
+        // members가 object 형태면 array로 변환
+        if (data.members && !Array.isArray(data.members)) {
+            data.members = Object.values(data.members);
+        }
+
         // ── 안전 검사: 의도치 않은 길드/멤버 손실 차단 ──
         if (!this._intentionalDeletion) {
-            if (this._knownGuildIds && this._knownGuildIds.size > 0) {
+            if (this._knownGuildIds && this._knownGuildIds.size > 0 && Array.isArray(data.guilds)) {
                 const newGuildIds = new Set(data.guilds.map(g => g.id));
                 const lostIds = [...this._knownGuildIds].filter(id => !newGuildIds.has(id));
                 if (lostIds.length > 0) {
@@ -171,7 +184,7 @@ const db = {
                     return false;
                 }
             }
-            if (this._knownMemberIds && this._knownMemberIds.size > 0) {
+            if (this._knownMemberIds && this._knownMemberIds.size > 0 && Array.isArray(data.members)) {
                 const newMemberIds = new Set(data.members.map(m => m.id));
                 const lostIds = [...this._knownMemberIds].filter(id => !newMemberIds.has(id));
                 if (lostIds.length > 0) {

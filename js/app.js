@@ -2624,7 +2624,8 @@ const app = {
                 }
                 if (!data.uploadHistory) data.uploadHistory = [];
                 data.uploadHistory.push(uploadRecord);
-                db.saveData(data);
+                const saved = db.saveData(data);
+                if (saved === false) throw new Error('[저장 차단] 데이터 보호 안전장치가 작동했습니다. 페이지를 새로고침 후 다시 시도하세요.');
             } else {
                 // UPDATE FINALIZED SETTLEMENTS (소급 적용) + 이력 저장 — saveData 1회
                 const guilds = db.getGuilds();
@@ -2715,7 +2716,8 @@ const app = {
 
                 if (!data.uploadHistory) data.uploadHistory = [];
                 data.uploadHistory.push(uploadRecord);
-                db.saveData(data);
+                const savedPast = db.saveData(data);
+                if (savedPast === false) throw new Error('[저장 차단] 데이터 보호 안전장치가 작동했습니다. 페이지를 새로고침 후 다시 시도하세요.');
 
                 result._pastUpdated = updatedGuildNames;
                 result._pastWeekName = targetWeekName;
