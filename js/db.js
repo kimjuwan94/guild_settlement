@@ -449,6 +449,69 @@ const db = {
         return { added: added.length, skipped };
     },
 
+    // 여러 길드에 동시 일괄 등록 (saveData 1회)
+    // groupedMembers: { [guildId]: [{ name, baeminId, coupangPhone, memo }, ...] }
+    bulkAddMembersMultiGuild(groupedMembers) {
+        const data = this.getData();
+        const existingIds = new Set(data.members.map(m => m.id));
+        let idCounter = data.members.length + 1;
+        const allAdded = [];
+        const results = {};
+
+        for (const [guildId, memberDataArray] of Object.entries(groupedMembers)) {
+            const guild = data.guilds.find(g => g.id === guildId);
+            if (!guild) { results[guildId] = { added: 0, skipped: ['길드 없음'] }; continue; }
+
+            const hasCustomRule = guild.customRule && guild.customRule.targetCalls > 0;
+            const hasCustomInc = guild.customIncentives && guild.customIncentives.length > 0;
+            const isUnlimited = hasCustomRule || hasCustomInc;
+            const maxLimit = { None: 9, Bronze: 10, Silver: 15, Gold: 20 }[guild.tier || 'None'] ?? 9;
+
+            const added = [];
+            const skipped = [];
+
+            for (const md of memberDataArray) {
+                if (!md.name) continue;
+                if (!isUnlimited) {
+                    const currentApproved = data.members.filter(m => m.guildId === guildId && m.status === 'approved').length + added.length;
+                    if (currentApproved >= maxLimit) { skipped.push(`${md.name} (인원 초과)`); continue; }
+                }
+                let newId;
+                do { newId = 'M' + String(idCounter++).padStart(3, '0'); } while (existingIds.has(newId));
+                existingIds.add(newId);
+
+                const newMember = {
+                    id: newId, guildId,
+                    name: md.name.trim(),
+                    baeminId: (md.baeminId || '').trim(),
+                    coupangPhone: (md.coupangPhone || '').trim(),
+                    memo: (md.memo || '').trim(),
+                    deliveries: 0, status: 'approved',
+                    createdAt: new Date().toISOString().split('T')[0]
+                };
+                data.members.push(newMember);
+                added.push(newMember);
+                allAdded.push(newMember);
+
+                if (!data.registrationHistory) data.registrationHistory = [];
+                data.registrationHistory.push({
+                    type: 'member_add', guildId,
+                    name: newMember.name,
+                    timestamp: new Date().toISOString(),
+                    details: `다중 일괄 등록 [배민:${newMember.baeminId || '-'}] [쿠팡:${newMember.coupangPhone || '-'}]`
+                });
+            }
+            results[guildId] = { added: added.length, skipped, guildName: guild.name };
+        }
+
+        if (allAdded.length > 0) {
+            this.saveData(data);
+            allAdded.forEach(m => this._backupItem('members', m));
+        }
+
+        return results;
+    },
+
     updateMember(id, updatedFields) {
         const data = this.getData();
         const member = data.members.find(m => m.id === id);

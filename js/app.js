@@ -1076,9 +1076,12 @@ const app = {
                         </p>
                         <p class="text-xs text-gray-500 mt-1">수요일 자정이 지나고 사이트 접속 시 시스템이 자동으로 데이터를 마감 처리하고 리셋합니다.</p>
                     </div>
-                    <div class="flex space-x-3">
+                    <div class="flex flex-wrap gap-2">
                         <button onclick="app.handleForceReset()" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold border border-gray-300 hover:bg-gray-200 transition-colors shadow-sm flex items-center">
-                            <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>수동 주간 마감 (리셋)
+                            <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>수동 주간 마감
+                        </button>
+                        <button onclick="app.showMultiBulkUploadModal()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors shadow-sm flex items-center">
+                            <i data-lucide="layers" class="w-4 h-4 mr-2"></i>전체 일괄 등록
                         </button>
                         <button onclick="document.getElementById('admin-add-modal').classList.remove('hidden')" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm flex items-center">
                             <i data-lucide="plus" class="w-4 h-4 mr-2"></i>신규 길드 생성
@@ -2076,6 +2079,214 @@ const app = {
             }
         };
         reader.readAsArrayBuffer(file);
+    },
+
+    // ── 다중 길드 일괄 등록 양식 다운로드 ──
+    downloadMultiGuildTemplate() {
+        const guilds = db.getGuilds();
+        const header = ['길드명', '이름', '배민커넥트ID', '쿠팡이츠뒷자리', '메모'];
+        const examples = guilds.length > 0
+            ? guilds.slice(0, 3).map(g => [g.name, '홍길동', 'hong123', '1234', ''])
+            : [['길드명예시', '홍길동', 'hong123', '1234', '']];
+        const wsData = [header, ...examples];
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [{ wch: 16 }, { wch: 14 }, { wch: 24 }, { wch: 20 }, { wch: 20 }];
+        XLSX.utils.book_append_sheet(wb, ws, '전체길드원명단');
+        XLSX.writeFile(wb, '전체_길드원_등록양식.xlsx');
+    },
+
+    // ── 전체 일괄 등록 모달 (다중 길드) ──
+    showMultiBulkUploadModal() {
+        this.state._multiBulkParsed = null;
+
+        const existing = document.getElementById('multi-bulk-modal');
+        if (existing) existing.remove();
+
+        const guilds = db.getGuilds();
+        const guildListHtml = guilds.map(g =>
+            `<span class="inline-block px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-mono">${g.name}</span>`
+        ).join(' ');
+
+        const wrap = document.createElement('div');
+        wrap.id = 'multi-bulk-modal';
+        wrap.innerHTML = `
+            <div class="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-[9999] p-4">
+                <div class="w-full max-w-3xl rounded-xl shadow-2xl flex flex-col max-h-[90vh]" style="background:rgba(255,255,255,0.97);border:1px solid rgba(255,255,255,0.2)">
+                    <div class="p-6 border-b border-gray-100">
+                        <div class="flex items-center justify-between mb-1">
+                            <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                <i data-lucide="layers" class="w-5 h-5 text-green-600"></i> 전체 길드 일괄 등록
+                            </h3>
+                            <button onclick="document.getElementById('multi-bulk-modal').remove()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+                        </div>
+                        <p class="text-xs text-gray-500">엑셀 첫 번째 열에 <strong>길드명</strong>을 정확히 입력하세요. 아래 등록된 길드명과 일치해야 합니다.</p>
+                        <div class="mt-2 flex flex-wrap gap-1">${guildListHtml}</div>
+                    </div>
+
+                    <div class="p-6 overflow-y-auto flex-1">
+                        <label for="multi-bulk-file-input" class="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-green-50 hover:border-green-400 transition-colors">
+                            <i data-lucide="file-spreadsheet" class="w-7 h-7 text-gray-400 mb-1.5"></i>
+                            <span class="text-sm font-medium text-gray-600">클릭하여 파일 선택 <span class="text-gray-400 font-normal">또는 드래그 앤 드롭</span></span>
+                            <span class="text-xs text-gray-400 mt-1">.xlsx / .xls / .csv — 길드명 · 이름 · 배민ID · 쿠팡뒷자리 · 메모</span>
+                            <input type="file" id="multi-bulk-file-input" accept=".xlsx,.xls,.csv" class="hidden" onchange="app.handleMultiBulkUploadFile(event)">
+                        </label>
+
+                        <div id="multi-bulk-preview-area" class="hidden mt-4 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <span id="multi-bulk-summary" class="text-sm font-semibold text-gray-700"></span>
+                                <button onclick="document.getElementById('multi-bulk-file-input').value=''; document.getElementById('multi-bulk-preview-area').classList.add('hidden'); document.getElementById('multi-bulk-confirm-btn').disabled=true;" class="text-xs text-gray-500 hover:text-red-500">다시 선택</button>
+                            </div>
+                            <div id="multi-bulk-preview-tables" class="space-y-3 max-h-80 overflow-y-auto pr-1"></div>
+                            <div id="multi-bulk-error-area" class="hidden p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-1"></div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-gray-100 flex justify-between items-center">
+                        <button onclick="app.downloadMultiGuildTemplate()" class="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-green-700 font-medium">
+                            <i data-lucide="download" class="w-4 h-4"></i> 양식 다운로드
+                        </button>
+                        <div class="flex gap-2">
+                            <button onclick="document.getElementById('multi-bulk-modal').remove()" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">취소</button>
+                            <button id="multi-bulk-confirm-btn" onclick="app.confirmMultiBulkUpload()" disabled class="px-5 py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed font-semibold">전체 등록 확인</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(wrap);
+        if (window.lucide) lucide.createIcons();
+    },
+
+    handleMultiBulkUploadFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const wb = XLSX.read(e.target.result, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+                const guilds = db.getGuilds();
+                // 정규화된 길드명 → id 맵
+                const nameToId = {};
+                guilds.forEach(g => { nameToId[g.name.replace(/\s/g, '')] = g.id; });
+
+                // 파싱: 첫 열 = 길드명, 나머지는 멤버 정보
+                const unrecognized = new Set();
+                const grouped = {}; // { guildId: [members] }
+
+                rows.slice(1).forEach(r => {
+                    const rawGuild = String(r[0] || '').trim();
+                    const name = String(r[1] || '').trim();
+                    if (!rawGuild && !name) return;
+
+                    const guildId = nameToId[rawGuild.replace(/\s/g, '')];
+                    if (!guildId) { if (rawGuild) unrecognized.add(rawGuild); return; }
+                    if (!name) return;
+
+                    if (!grouped[guildId]) grouped[guildId] = [];
+                    grouped[guildId].push({
+                        name,
+                        baeminId: String(r[2] || '').trim(),
+                        coupangPhone: String(r[3] || '').trim(),
+                        memo: String(r[4] || '').trim(),
+                        _rawGuildName: rawGuild,
+                    });
+                });
+
+                this.state._multiBulkParsed = grouped;
+
+                // 미리보기 렌더링
+                const tablesEl = document.getElementById('multi-bulk-preview-tables');
+                const errorEl = document.getElementById('multi-bulk-error-area');
+                let totalMembers = 0;
+                let guildCount = 0;
+
+                tablesEl.innerHTML = Object.entries(grouped).map(([gid, members]) => {
+                    const guild = guilds.find(g => g.id === gid);
+                    const existing = db.getMembers(gid);
+                    const existingNames = new Set(existing.map(m => m.name.replace(/\s/g, '')));
+                    totalMembers += members.length;
+                    guildCount++;
+
+                    const rows = members.map((m, i) => {
+                        const dup = existingNames.has(m.name.replace(/\s/g, ''));
+                        const warn = !m.baeminId && !m.coupangPhone;
+                        const badge = dup
+                            ? '<span class="px-1 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">중복</span>'
+                            : warn
+                            ? '<span class="px-1 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-bold">ID없음</span>'
+                            : '<span class="px-1 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold">정상</span>';
+                        return `<tr class="hover:bg-gray-50 ${dup ? 'bg-orange-50' : ''}">
+                            <td class="px-2 py-1.5 text-gray-400 text-xs w-6">${i + 1}</td>
+                            <td class="px-2 py-1.5 font-semibold text-gray-800 text-sm">${m.name}</td>
+                            <td class="px-2 py-1.5 text-gray-500 font-mono text-xs">${m.baeminId || '-'}</td>
+                            <td class="px-2 py-1.5 text-gray-500 font-mono text-xs">${m.coupangPhone || '-'}</td>
+                            <td class="px-2 py-1.5 text-gray-400 text-xs">${m.memo || ''}</td>
+                            <td class="px-2 py-1.5 text-center">${badge}</td>
+                        </tr>`;
+                    }).join('');
+
+                    return `
+                        <div class="border border-gray-200 rounded-lg overflow-hidden">
+                            <div class="bg-gray-50 px-3 py-2 flex items-center justify-between border-b border-gray-200">
+                                <span class="font-bold text-sm text-gray-800">${guild ? guild.name : gid}</span>
+                                <span class="text-xs text-gray-500">${members.length}명</span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left">
+                                    <thead class="bg-white text-gray-400 text-[10px] uppercase">
+                                        <tr>
+                                            <th class="px-2 py-1">#</th>
+                                            <th class="px-2 py-1">이름</th>
+                                            <th class="px-2 py-1">배민ID</th>
+                                            <th class="px-2 py-1">쿠팡뒷자리</th>
+                                            <th class="px-2 py-1">메모</th>
+                                            <th class="px-2 py-1 text-center">상태</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">${rows}</tbody>
+                                </table>
+                            </div>
+                        </div>`;
+                }).join('');
+
+                // 인식 못한 길드명 오류 표시
+                if (unrecognized.size > 0) {
+                    errorEl.classList.remove('hidden');
+                    errorEl.innerHTML = `<strong>인식할 수 없는 길드명 (등록 건너뜀):</strong><br>${[...unrecognized].map(n => `· ${n}`).join('<br>')}`;
+                } else {
+                    errorEl.classList.add('hidden');
+                }
+
+                document.getElementById('multi-bulk-summary').textContent =
+                    `${guildCount}개 길드 · 총 ${totalMembers}명`;
+                document.getElementById('multi-bulk-preview-area').classList.remove('hidden');
+                document.getElementById('multi-bulk-confirm-btn').disabled = totalMembers === 0;
+                if (window.lucide) lucide.createIcons();
+            } catch (err) {
+                alert('파일 파싱 실패: ' + err.message);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    },
+
+    confirmMultiBulkUpload() {
+        const grouped = this.state._multiBulkParsed;
+        if (!grouped || Object.keys(grouped).length === 0) return;
+
+        const results = db.bulkAddMembersMultiGuild(grouped);
+        document.getElementById('multi-bulk-modal').remove();
+
+        const lines = Object.values(results).map(r => {
+            const skippedStr = r.skipped.length > 0 ? ` (미등록 ${r.skipped.length}명: ${r.skipped.join(', ')})` : '';
+            return `· ${r.guildName}: ${r.added}명 등록${skippedStr}`;
+        });
+        alert(`등록 완료\n\n${lines.join('\n')}`);
+
+        this.renderAdmin(document.getElementById('app-content'));
     },
 
     // ── 어드민: 길드 선택 후 일괄 등록 모달 열기 ──
