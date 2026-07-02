@@ -1621,15 +1621,20 @@ const app = {
 
         let rows = history.map(item => {
             const guild = guilds.find(g => g.id === item.guildId);
-            const typeBadge = item.type === 'guild_add' 
-                ? '<span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-bold">길드 생성</span>'
-                : '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">멤버 추가</span>';
-            
+            const typeBadge = {
+                'guild_add':     '<span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-bold">길드 생성</span>',
+                'member_add':    '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">멤버 추가</span>',
+                'member_update': '<span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-bold">정보 수정</span>',
+                'member_delete': '<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold">멤버 삭제</span>',
+                'system_recovery': '<span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-bold">시스템</span>',
+            }[item.type] || '<span class="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-bold">' + (item.type || '-') + '</span>';
+
+            const isDelete = item.type === 'member_delete';
             return `
-                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                <tr class="border-b border-gray-100 hover:bg-gray-50${isDelete ? ' bg-red-50' : ''}">
                     <td class="py-3 px-4 text-xs text-gray-500">${new Date(item.timestamp).toLocaleString()}</td>
                     <td class="py-3 px-4">${typeBadge}</td>
-                    <td class="py-3 px-4 text-sm font-bold text-gray-800">${item.name}</td>
+                    <td class="py-3 px-4 text-sm font-bold ${isDelete ? 'text-red-500 line-through' : 'text-gray-800'}">${item.name}</td>
                     <td class="py-3 px-4 text-sm text-gray-600">${guild ? guild.name : '알 수 없음'}</td>
                     <td class="py-3 px-4 text-xs text-gray-400 italic">${item.details || '-'}</td>
                 </tr>

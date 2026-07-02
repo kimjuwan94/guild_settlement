@@ -582,6 +582,17 @@ const db = {
 
     deleteMember(id) {
         const data = this.getData();
+        const member = data.members.find(m => m.id === id);
+        if (member) {
+            if (!data.registrationHistory) data.registrationHistory = [];
+            data.registrationHistory.push({
+                type: 'member_delete',
+                guildId: member.guildId,
+                name: member.name,
+                timestamp: new Date().toISOString(),
+                details: `삭제 [배민:${member.baeminId || '-'}] [쿠팡:${member.coupangPhone || '-'}]`
+            });
+        }
         data.members = data.members.filter(m => m.id !== id);
         // 의도적 삭제임을 명시해야 saveData의 손실 감지 차단을 통과
         this._intentionalDeletion = true;
