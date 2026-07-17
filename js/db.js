@@ -385,8 +385,12 @@ const db = {
             }
         }
 
-        const count = data.members.length + 1;
-        member.id = 'M' + String(count).padStart(3, '0');
+        // length+1 대신 max ID+1 사용: 멤버 삭제/일괄교체 후 ID 충돌 방지
+        const maxId = data.members.reduce((max, m) => {
+            const n = m.id && m.id.match(/M(\d+)/);
+            return n ? Math.max(max, parseInt(n[1])) : max;
+        }, 0);
+        member.id = 'M' + String(maxId + 1).padStart(3, '0');
         member.guildId = guildId;
         member.deliveries = 0; // Initialize deliveries
         member.createdAt = new Date().toISOString().split('T')[0];
@@ -426,7 +430,11 @@ const db = {
         const added = [];
         const skipped = [];
         const existingIds = new Set(data.members.map(m => m.id));
-        let idCounter = data.members.length + 1;
+        // max ID+1 시작: length 기반 카운터는 일괄교체 후 충돌 위험
+        const _maxId1 = data.members.reduce((max, m) => {
+            const n = m.id && m.id.match(/M(\d+)/); return n ? Math.max(max, parseInt(n[1])) : max;
+        }, 0);
+        let idCounter = _maxId1 + 1;
 
         for (const md of memberDataArray) {
             if (!md.name) continue;
@@ -492,7 +500,11 @@ const db = {
     bulkAddMembersMultiGuild(groupedMembers, bypassLimit = true) {
         const data = this.getData();
         const existingIds = new Set(data.members.map(m => m.id));
-        let idCounter = data.members.length + 1;
+        // max ID+1 시작: length 기반 카운터는 일괄교체 후 충돌 위험
+        const _maxId2 = data.members.reduce((max, m) => {
+            const n = m.id && m.id.match(/M(\d+)/); return n ? Math.max(max, parseInt(n[1])) : max;
+        }, 0);
+        let idCounter = _maxId2 + 1;
         const allAdded = [];
         const results = {};
 
