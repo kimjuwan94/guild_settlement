@@ -49,7 +49,10 @@ const db = {
             const cloudData = mainResult.status === 'fulfilled' ? mainResult.value : null;
             const backupData = backupResult.status === 'fulfilled' ? backupResult.value : null;
 
-            if (cloudData && cloudData.guilds && cloudData.guilds.length > 0) {
+            // Firebase는 배열을 object로 반환할 수 있으므로 .length 대신 존재 여부 확인
+            const hasGuilds = cloudData && cloudData.guilds &&
+                (Array.isArray(cloudData.guilds) ? cloudData.guilds.length > 0 : Object.keys(cloudData.guilds).length > 0);
+            if (hasGuilds) {
                 this._memoryData = { ...this._defaultData, ...cloudData };
                 // members가 Firebase에서 object로 올 경우 array로 변환
                 if (this._memoryData.members && !Array.isArray(this._memoryData.members)) {
@@ -375,7 +378,7 @@ const db = {
             // 1. 등급별 인원 제한 체크 (None: 9명, Bronze: 10명, Silver: 15명, Gold: 20명)
             const currentCount = this.getHeadcountForGuild(guildId);
             const tier = guild.tier || 'None';
-            let maxLimit = 9; // None
+            let maxLimit = 10; // None (SettlementEngine.Tiers.None.limit = 10)
             if (tier === 'Bronze') maxLimit = 10;
             if (tier === 'Silver') maxLimit = 15;
             if (tier === 'Gold') maxLimit = 20;
@@ -605,6 +608,7 @@ const db = {
                 details: `삭제 [배민:${member.baeminId || '-'}] [쿠팡:${member.coupangPhone || '-'}]`
             });
         }
+        if (!member) return; // 존재하지 않는 멤버면 종료 (불필요한 저장/플래그 방지)
         data.members = data.members.filter(m => m.id !== id);
         // 의도적 삭제임을 명시해야 saveData의 손실 감지 차단을 통과
         this._intentionalDeletion = true;

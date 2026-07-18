@@ -1604,7 +1604,7 @@ const app = {
     renderRegistrationHistory(container) {
         if (this.state.currentUser.role !== 'admin') return;
         
-        const history = (db.getData().registrationHistory || []).reverse();
+        const history = [...(db.getData().registrationHistory || [])].reverse();
         const guilds = db.getGuilds();
 
         if (history.length === 0) {
@@ -2691,8 +2691,7 @@ const app = {
                                 s.memberStats.push({ id: m.id, name: m.name, deliveries: 0 });
                             }
                         }
-                        // memberCount도 최신 등록 인원으로 갱신
-                        s.memberCount = approvedMembers.length;
+                        // memberCount는 정산 최초 생성 시점 인원 유지 (재업로드 시 덮어쓰면 등급/금액 오산출)
                     }
 
                     // 이번 업로드 건수 반영
